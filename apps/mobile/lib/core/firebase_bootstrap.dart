@@ -93,6 +93,7 @@ Future<FirebaseBootstrapResult> initializeFirebase() async {
     }
 
     await _enableOfflinePersistence();
+    await _discardStaleSession();
 
     return FirebaseBootstrapResult(
       FirebaseStatus.connected,
@@ -130,6 +131,55 @@ Future<void> _useEmulators() async {
     'storage ${Env.storagePort}, functions ${Env.functionsPort} '
     'region ${Env.functionsRegion})',
   );
+}
+
+/// Drops a signed-in session whose refresh token the backend no longer honours.
+///
+/// Firebase Auth restores `currentUser` from disk before it has spoken to the
+/// server, and Firestore's offline cache will happily serve that user's
+/// documents. Together they produce a convincing but entirely broken state: the
+/// gate sees an approved store and renders the dashboard, while every network
+/// call fails with
+///
+///   UNAUTHENTICATED ... [ INVALID_REFRESH_TOKEN ]
+///
+/// This is the normal consequence of restarting the Auth emulator, whose users
+/// live in memory — so during development it happens after every restart, and
+/// the app looks signed in while nothing works. It also happens in production
+/// when an account is deleted or its tokens are revoked.
+///
+/// Forcing one token refresh at startup settles the question. A refusal means
+/// the session is genuinely dead, so we sign out and let the gate route to
+/// phone sign-in, which is a state the dealer can actually act on.
+///
+/// Deliberately narrow: only token-invalidity codes sign the user out. A plain
+/// network failure must NOT, or a dealer opening the app underground would be
+/// logged out of an account that is perfectly valid — the exact opposite of the
+/// offline-first behaviour SOW section 10 asks for.
+Future<void> _discardStaleSession() async {
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) return;
+
+  try {
+    await user.getIdToken(true);
+  } on FirebaseAuthException catch (e) {
+    const dead = {
+      'invalid-user-token',
+      'user-token-expired',
+      'user-not-found',
+      'user-disabled',
+      'invalid-refresh-token',
+    };
+    final message = (e.message ?? '').toUpperCase();
+    if (dead.contains(e.code) || message.contains('INVALID_REFRESH_TOKEN')) {
+      debugPrint('Discarding stale session [${e.code}] — signing out.');
+      await FirebaseAuth.instance.signOut();
+    }
+  } catch (e) {
+    // Offline, or the emulator is not up yet. Keep the session: the cached
+    // listings are the whole point of offline-first.
+    debugPrint('Could not verify session (staying signed in): $e');
+  }
 }
 
 /// Firestore native offline persistence (ADR-001 #3).

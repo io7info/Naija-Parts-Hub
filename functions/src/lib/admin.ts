@@ -16,8 +16,30 @@ if (getApps().length === 0) {
 }
 
 export const db = getFirestore();
-export const auth = getAuth();
-export const storage = getStorage();
+
+/**
+ * Auth and Storage are resolved on first use, not at import.
+ *
+ * The emulator spawns a separate runtime worker per function, and every worker
+ * evaluates this module — so an eager `getStorage()` made *adminReviewStore*
+ * pay to load `@google-cloud/storage`, which it never touches. That is the
+ * single largest contributor to firebase-admin cold start, and on a slow host
+ * it pushed worker startup past the emulator's own timeout:
+ *
+ *   !! functions: Failed to start functions ...: FirebaseError: Failed to load
+ *      function.
+ *
+ * — with the runtime then reporting "initialized" a second and a half later.
+ * The function was fine; it simply had not finished loading in time.
+ *
+ * Accessors rather than getters so the cost is obvious at the call site.
+ */
+let _auth: ReturnType<typeof getAuth> | undefined;
+let _storage: ReturnType<typeof getStorage> | undefined;
+
+export const auth = (): ReturnType<typeof getAuth> => (_auth ??= getAuth());
+export const storage = (): ReturnType<typeof getStorage> => (_storage ??= getStorage());
+
 export { FieldValue, Timestamp };
 
 // Collection paths, centralised so a rename is one edit.

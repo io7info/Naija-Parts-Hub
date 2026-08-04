@@ -72,7 +72,8 @@ service cloud.firestore {
     // Mirrors STORE_DEALER_FIELDS
     function storeDealerFields() {
       return ['businessName', 'ownerName', 'phone', 'whatsapp', 'cacNumber',
-              'address', 'state', 'city', 'description', 'updatedAt'];
+              'address', 'state', 'city', 'description', 'email', 'landmark',
+              'automotiveCategory', 'updatedAt'];
     }
 
     // Mirrors LISTING_BACKEND_FIELDS
@@ -107,7 +108,15 @@ service cloud.firestore {
           && isFilled(d.state, 60)
           && isFilled(d.city, 60)
           && d.whatsapp is string && d.whatsapp.size() <= 20
-          && d.description is string && d.description.size() <= 2000;
+          && d.description is string && d.description.size() <= 2000
+          // Optional design-sourced fields. `.get(k, '')` rather than a bare
+          // property access: these are absent on stores registered before they
+          // existed, and a missing key raises rather than evaluating false —
+          // which would deny every profile edit for those dealers.
+          && d.get('email', '') is string && d.get('email', '').size() <= 120
+          && d.get('landmark', '') is string && d.get('landmark', '').size() <= 120
+          && d.get('automotiveCategory', '') is string
+          && d.get('automotiveCategory', '').size() <= 60;
     }
 
     function validListingPayload(d) {

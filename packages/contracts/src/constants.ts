@@ -58,6 +58,8 @@ export const FIELD_LIMITS = {
   ownerName: 100,
   description: 2000,
   address: 200,
+  email: 120,
+  landmark: 120,
   listingName: 140,
   listingDescription: 2000,
   brand: 60,
@@ -65,6 +67,27 @@ export const FIELD_LIMITS = {
   compatibleMake: 60,
   compatibleModel: 60,
 } as const;
+
+// --- Store classification (client-approved registration design) -------------
+
+/**
+ * The automotive verticals a shop can declare at registration.
+ *
+ * Deliberately a fixed list rather than free text: SOW §7 scopes the platform
+ * to automotive parts, and a typed vertical is what makes that filterable
+ * later. Distinct from `categories/{id}`, which classifies a *listing*; this
+ * classifies the *business*.
+ */
+export const AUTOMOTIVE_CATEGORIES = [
+  'Car Parts',
+  'Motorcycle Parts',
+  'Truck & Trailer',
+  'Tractor & Farm',
+  'Heavy Equipment',
+  'Electrical Parts',
+] as const;
+
+export type AutomotiveCategory = (typeof AUTOMOTIVE_CATEGORIES)[number];
 
 /** Firestore caps `array-contains-any` / `in` at 30 values per query. */
 export const MAX_SEARCH_TOKENS = 60;

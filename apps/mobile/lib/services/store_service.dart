@@ -36,6 +36,9 @@ class StoreService {
     required String state,
     required String city,
     required String description,
+    String email = '',
+    String landmark = '',
+    String automotiveCategory = '',
   }) async {
     final callable = _functions.httpsCallable('registerStore');
     final result = await callable.call<Map<String, dynamic>>({
@@ -48,6 +51,12 @@ class StoreService {
       'state': state,
       'city': city,
       'description': description,
+      // From the client-approved registration design. The callable trims and
+      // caps these, and drops an automotiveCategory outside the known list —
+      // so an older client that omits them still registers successfully.
+      'email': email,
+      'landmark': landmark,
+      'automotiveCategory': automotiveCategory,
       'acceptedTerms': true,
     });
     final data = result.data;

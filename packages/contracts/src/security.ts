@@ -41,6 +41,11 @@ export const STORE_DEALER_FIELDS = [
   'state',
   'city',
   'description',
+  // From the client-approved registration design; contact/classification only,
+  // no security consequence. See StoreProfileInput.
+  'email',
+  'landmark',
+  'automotiveCategory',
   'updatedAt',
 ] as const;
 

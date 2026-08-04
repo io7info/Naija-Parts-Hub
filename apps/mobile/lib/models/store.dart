@@ -54,6 +54,9 @@ class Store {
     required this.visible,
     required this.activeListingCount,
     required this.subscription,
+    this.email = '',
+    this.landmark = '',
+    this.automotiveCategory = '',
     this.rejectionReason,
   });
 
@@ -67,6 +70,13 @@ class Store {
   final String state;
   final String city;
   final String description;
+
+  /// From the client-approved registration design rather than the SOW §2 field
+  /// list. Default to '' on read: stores registered before these existed have
+  /// no such key, and a missing field must not break the dealer app.
+  final String email;
+  final String landmark;
+  final String automotiveCategory;
 
   // Backend-controlled — read-only here by design (ADR-001 #4).
   final String slug;
@@ -95,6 +105,9 @@ class Store {
       state: (d['state'] as String?) ?? '',
       city: (d['city'] as String?) ?? '',
       description: (d['description'] as String?) ?? '',
+      email: (d['email'] as String?) ?? '',
+      landmark: (d['landmark'] as String?) ?? '',
+      automotiveCategory: (d['automotiveCategory'] as String?) ?? '',
       slug: (d['slug'] as String?) ?? '',
       status: StoreStatus.parse(d['status'] as String?),
       visible: (d['visible'] as bool?) ?? false,

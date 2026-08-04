@@ -1,5 +1,6 @@
 import { onCall } from 'firebase-functions/v2/https';
 import {
+  AUTOMOTIVE_CATEGORIES,
   ERROR_CODE,
   FIELD_LIMITS,
   slugCandidates,
@@ -9,7 +10,7 @@ import {
   type RegisterStoreResponse,
 } from '@nph/contracts';
 import { COL, FieldValue, Timestamp, db, slugRef, storeRef } from './lib/admin';
-import { fail, requireAuth, requireString } from './lib/guards';
+import { fail, optionalString, requireAuth, requireString } from './lib/guards';
 
 /**
  * Dealer registration (SOW section 2).
@@ -55,6 +56,19 @@ export const registerStore = onCall<RegisterStoreRequest, Promise<RegisterStoreR
         typeof data.description === 'string'
           ? data.description.trim().slice(0, FIELD_LIMITS.description)
           : '',
+
+      // Optional, from the client-approved registration design. Trimmed and
+      // capped rather than required — a dealer who skips them still registers.
+      email: optionalString(data.email, FIELD_LIMITS.email),
+      landmark: optionalString(data.landmark, FIELD_LIMITS.landmark),
+      // Constrained to the known list. An unrecognised value is dropped rather
+      // than rejected: it is a classification, not a security boundary, and
+      // failing registration over it would be disproportionate.
+      automotiveCategory: (AUTOMOTIVE_CATEGORIES as readonly string[]).includes(
+        (data.automotiveCategory ?? '').trim(),
+      )
+        ? data.automotiveCategory!.trim()
+        : '',
     };
 
     // An explicit preferred slug must be valid; otherwise derive from the name.

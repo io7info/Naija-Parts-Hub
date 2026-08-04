@@ -21,7 +21,7 @@
     "contracts:build": "npm run build --workspace @nph/contracts",
     "check:rules-sync": "npm run contracts:build && node scripts/check-rules-sync.mjs",
     "verify": "npm run check:rules-sync && npm run check:binaries && npm run typecheck",
-    "emulators": "firebase emulators:start --project demo-naija-parts-hub",
+    "emulators": "node scripts/emulators.mjs",
     "seed": "npm run seed --workspace @nph/functions",
     "test:rules": "npm run test:rules --workspace @nph/firebase-tests",
     "test:limit": "npm run test:limit --workspace @nph/firebase-tests",

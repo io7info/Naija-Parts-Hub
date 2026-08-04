@@ -42,6 +42,23 @@ export interface StoreProfileInput {
   state: string;
   city: string;
   description: string;
+
+  /**
+   * The three fields below come from the client-approved registration design
+   * rather than the SOW §2 field list. They are dealer-owned contact and
+   * classification data with no security consequence, so they live alongside
+   * the rest of the profile rather than behind a callable.
+   *
+   * Optional on read: stores registered before this was added will not have
+   * them, and a missing field must not break the dealer app.
+   */
+
+  /** Business email. Dealers still authenticate by phone — this is contact only. */
+  email?: string;
+  /** Nearest landmark, e.g. "Opposite Ladipo Main Gate". Aids buyers finding a stall. */
+  landmark?: string;
+  /** Which automotive vertical the shop trades in. See AUTOMOTIVE_CATEGORIES. */
+  automotiveCategory?: string;
 }
 
 export interface Store extends StoreProfileInput {

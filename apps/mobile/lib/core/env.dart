@@ -71,11 +71,24 @@ abstract final class Env {
   static const String functionsRegion =
       String.fromEnvironment('FUNCTIONS_REGION', defaultValue: 'europe-west1');
 
+  /// Public marketplace origin — storefronts, product pages, and the plan
+  /// upgrade flow all live here.
+  ///
+  /// One constant rather than a URL literal per call site: the project has
+  /// already accumulated three spellings of its own domain (naijahubparts.ng in
+  /// the SOW, naijapartshub.ng here, naijapartshub.com in the web app), and
+  /// scattering them makes the eventual correction a search-and-replace across
+  /// two languages.
+  static const String marketplaceOrigin = String.fromEnvironment(
+    'MARKETPLACE_ORIGIN',
+    defaultValue: 'https://naijapartshub.ng',
+  );
+
   /// Shown when a free store hits the 10-listing limit. Web-only by design —
   /// selling an in-app upgrade would engage App Store Guideline 3.1.1.
   static const String upgradeUrl = String.fromEnvironment(
     'UPGRADE_URL',
-    defaultValue: 'https://naijapartshub.ng/upgrade',
+    defaultValue: '$marketplaceOrigin/plans',
   );
 
   static String get describe =>

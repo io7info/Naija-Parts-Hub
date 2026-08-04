@@ -5,7 +5,7 @@ import {
   type Listing,
   type UnpublishListingRequest,
 } from '@nph/contracts';
-import { FieldValue, Timestamp, db, listingRef, storage, storeRef } from './lib/admin';
+import { FieldValue, Timestamp, auth, db, listingRef, storage, storeRef } from './lib/admin';
 import { fail, requireAuth, requireString } from './lib/guards';
 
 /**
@@ -87,7 +87,7 @@ export const deleteListing = onCall<DeleteListingRequest>(async (request) => {
 
   // Best-effort Storage cleanup. A failure here must not fail the delete — the
   // document is already gone and the objects are orphaned at worst.
-  await Promise.allSettled(images.map((path) => storage.bucket().file(path).delete()));
+  await Promise.allSettled(images.map((path) => storage().bucket().file(path).delete()));
 
   return { listingId, deleted: true, activeListingCount };
 });
@@ -112,7 +112,7 @@ export const deleteAccount = onCall(async (request) => {
       .map((i) => i.path)
       .filter((p): p is string => typeof p === 'string' && p.length > 0),
   );
-  await Promise.allSettled(paths.map((p) => storage.bucket().file(p).delete()));
+  await Promise.allSettled(paths.map((p) => storage().bucket().file(p).delete()));
 
   const storeSnap = await storeRef(uid).get();
   const slug = storeSnap.data()?.slug as string | undefined;
@@ -131,7 +131,7 @@ export const deleteAccount = onCall(async (request) => {
   });
 
   // Last: revoking the auth user invalidates the token making this call.
-  await (await import('./lib/admin')).auth.deleteUser(uid);
+  await auth().deleteUser(uid);
 
   return { deleted: true };
 });

@@ -194,6 +194,24 @@ class ListingService {
       rethrow;
     }
   }
+
+  /// Permanent account deletion (Apple Guideline 5.1.1(v) / Google Play).
+  ///
+  /// Server-side the callable removes every listing, its Storage objects, the
+  /// store document, the slug reservation and finally the auth user — in that
+  /// order, because revoking the user first would invalidate the token making
+  /// the call.
+  ///
+  /// The typed 'DELETE' confirmation is re-checked on the server; the dialog is
+  /// a courtesy, not the guard.
+  Future<void> deleteAccount() async {
+    try {
+      await _functions.httpsCallable('deleteAccount').call({'confirmation': 'DELETE'});
+    } on FirebaseFunctionsException catch (e) {
+      if (_isConnectivityFailure(e)) throw const PublishRequiresConnection();
+      rethrow;
+    }
+  }
 }
 
 final listingServiceProvider = Provider<ListingService>(

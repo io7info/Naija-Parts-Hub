@@ -99,6 +99,10 @@ functions/lib/
 # project depends on.
 apps/mobile/firebase.json
 
+# Persisted Emulator Suite state (--import / --export-on-exit). Local test
+# data only, but it does contain the seeded accounts, so it stays out.
+.emulator-data/
+
 .firebase/
 firebase-debug.log
 firestore-debug.log

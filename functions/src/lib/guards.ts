@@ -62,6 +62,18 @@ export function requireString(
   return trimmed;
 }
 
+/**
+ * Trim-and-cap for a field the dealer may legitimately leave blank.
+ *
+ * Returns '' rather than undefined so the stored document always has the key.
+ * A Firestore document with a missing key and one with an empty string behave
+ * differently in security rules, and the absent-key case is the one that
+ * raises rather than evaluating false.
+ */
+export function optionalString(value: unknown, max: number): string {
+  return typeof value === 'string' ? value.trim().slice(0, max) : '';
+}
+
 export function requireOneOf<T extends string>(
   value: unknown,
   allowed: readonly T[],

@@ -94,61 +94,95 @@ AppBarTheme _appBarTheme() => const AppBarTheme(
       ),
     );
 
-/// Primary actions are full pills in the approved screens — "Send OTP",
-/// "Verify and Continue", "Publish listing" — not the 14 px card radius.
-ButtonStyle _pillStyle({
+/// Primary actions are `rounded-xl` (19.6 px) at roughly 48 px tall.
+///
+/// An earlier version of this file rendered them as full pills, citing the
+/// approved screens. That was wrong, and the comment is what kept it wrong.
+/// Counting every orange button in the design pack: eleven of twelve are
+/// `rounded-xl ... py-3.5`, and the single `rounded-full` one is the floating
+/// action button on My Listings, which is a FAB and correctly round. Even
+/// "Verify and Continue" — named in the old comment as evidence for pills — is
+/// literally `rounded-xl bg-orange py-3.5`.
+///
+/// Type is `text-sm font-semibold`: 14 px at w600, not 16 px at w700.
+ButtonStyle _buttonStyle({
   required Color background,
   required Color foreground,
+  Color? pressed,
   BorderSide? side,
 }) =>
     ButtonStyle(
       backgroundColor: WidgetStateProperty.resolveWith((states) {
-        if (states.contains(WidgetState.disabled)) return background.withValues(alpha: 0.45);
-        if (states.contains(WidgetState.pressed)) return NphColors.orangeHover;
+        if (states.contains(WidgetState.disabled)) {
+          // The design disables with opacity, not a different colour, so the
+          // control keeps its shape and the change reads as "not yet" rather
+          // than as a separate style.
+          return background.withValues(alpha: 0.50);
+        }
+        if (states.contains(WidgetState.pressed)) return pressed ?? background;
         return background;
       }),
-      foregroundColor: WidgetStatePropertyAll(foreground),
+      foregroundColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.disabled)) {
+          return foreground.withValues(alpha: 0.60);
+        }
+        return foreground;
+      }),
       overlayColor: const WidgetStatePropertyAll(Colors.transparent),
       elevation: const WidgetStatePropertyAll(0),
-      minimumSize: const WidgetStatePropertyAll(Size.fromHeight(54)),
+      minimumSize: const WidgetStatePropertyAll(Size.fromHeight(NphSize.buttonHeight)),
+      padding: const WidgetStatePropertyAll(
+        EdgeInsets.symmetric(horizontal: NphSpacing.lg),
+      ),
       shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: NphRadius.pillBorder, side: side ?? BorderSide.none),
+        RoundedRectangleBorder(borderRadius: NphRadius.buttonBorder, side: side ?? BorderSide.none),
       ),
       textStyle: const WidgetStatePropertyAll(
-        TextStyle(fontFamily: NphFonts.body, fontSize: 16, fontWeight: FontWeight.w700),
+        TextStyle(fontFamily: NphFonts.body, fontSize: 14, fontWeight: FontWeight.w600),
       ),
     );
 
 ElevatedButtonThemeData _primaryButtonTheme() => ElevatedButtonThemeData(
-      style: _pillStyle(background: NphColors.orange, foreground: Colors.white),
-    );
-
-FilledButtonThemeData _filledButtonTheme() => FilledButtonThemeData(
-      style: _pillStyle(background: NphColors.orange, foreground: Colors.white),
-    );
-
-OutlinedButtonThemeData _outlinedButtonTheme() => OutlinedButtonThemeData(
-      style: _pillStyle(
-        background: Colors.transparent,
-        foreground: NphColors.foreground,
-        side: const BorderSide(color: NphColors.border),
-      ).copyWith(
-        backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
+      style: _buttonStyle(
+        background: NphColors.orange,
+        foreground: Colors.white,
+        pressed: NphColors.orangeHover,
       ),
     );
 
+FilledButtonThemeData _filledButtonTheme() => FilledButtonThemeData(
+      style: _buttonStyle(
+        background: NphColors.orange,
+        foreground: Colors.white,
+        pressed: NphColors.orangeHover,
+      ),
+    );
+
+/// Secondary action: bordered, card-coloured, same geometry as primary.
+OutlinedButtonThemeData _outlinedButtonTheme() => OutlinedButtonThemeData(
+      style: _buttonStyle(
+        background: NphColors.card,
+        foreground: NphColors.foreground,
+        pressed: NphColors.muted,
+        side: const BorderSide(color: NphColors.border),
+      ),
+    );
+
+/// Tertiary action — orange text, no background, no border. The design uses it
+/// for "Resend Code", "Sign In" and "Register a New Store".
 TextButtonThemeData _textButtonTheme() => const TextButtonThemeData(
       style: ButtonStyle(
         foregroundColor: WidgetStatePropertyAll(NphColors.orange),
         overlayColor: WidgetStatePropertyAll(Colors.transparent),
+        minimumSize: WidgetStatePropertyAll(Size.fromHeight(40)),
         textStyle: WidgetStatePropertyAll(
-          TextStyle(fontFamily: NphFonts.body, fontSize: 15, fontWeight: FontWeight.w700),
+          TextStyle(fontFamily: NphFonts.body, fontSize: 14, fontWeight: FontWeight.w600),
         ),
       ),
     );
 
-/// Fields are 11 px-radius outlined boxes on white, with a muted placeholder —
-/// matching the phone-number and part-name inputs in the approved screens.
+/// Fields are `rounded-xl` outlined boxes on white with a muted placeholder,
+/// padded `px-3 py-2.5` — matching the phone-number and part-name inputs.
 InputDecorationTheme _inputTheme() {
   OutlineInputBorder border(Color color, [double width = 1]) => OutlineInputBorder(
         borderRadius: NphRadius.fieldBorder,
@@ -157,10 +191,10 @@ InputDecorationTheme _inputTheme() {
 
   return InputDecorationTheme(
     filled: true,
-    fillColor: NphColors.background,
+    fillColor: NphColors.card,
     contentPadding: const EdgeInsets.symmetric(
-      horizontal: NphSpacing.lg,
-      vertical: NphSpacing.lg,
+      horizontal: NphSpacing.md,
+      vertical: NphSpacing.md,
     ),
     border: border(NphColors.border),
     enabledBorder: border(NphColors.border),
@@ -170,7 +204,7 @@ InputDecorationTheme _inputTheme() {
     disabledBorder: border(NphColors.border.withValues(alpha: 0.5)),
     hintStyle: const TextStyle(
       fontFamily: NphFonts.body,
-      fontSize: 15,
+      fontSize: 14,
       color: NphColors.mutedForeground,
     ),
     // The design labels fields ABOVE the box rather than floating inside, so
@@ -178,7 +212,7 @@ InputDecorationTheme _inputTheme() {
     floatingLabelBehavior: FloatingLabelBehavior.never,
     labelStyle: const TextStyle(
       fontFamily: NphFonts.body,
-      fontSize: 15,
+      fontSize: 14,
       color: NphColors.mutedForeground,
     ),
     errorStyle: const TextStyle(
@@ -199,17 +233,19 @@ CardThemeData _cardTheme() => const CardThemeData(
       ),
     );
 
+/// Filter chips are pills — `rounded-full border px-3 py-1.5 text-xs`. Pills
+/// are correct *here*; they are not correct for buttons. See _buttonStyle.
 ChipThemeData _chipTheme() => const ChipThemeData(
-      backgroundColor: NphColors.muted,
+      backgroundColor: NphColors.card,
       selectedColor: NphColors.orange,
       labelStyle: TextStyle(
         fontFamily: NphFonts.body,
-        fontSize: 13,
+        fontSize: 12,
         fontWeight: FontWeight.w600,
       ),
       side: BorderSide(color: NphColors.border),
       shape: RoundedRectangleBorder(borderRadius: NphRadius.pillBorder),
-      padding: EdgeInsets.symmetric(horizontal: NphSpacing.md, vertical: NphSpacing.sm),
+      padding: EdgeInsets.symmetric(horizontal: NphSpacing.md, vertical: 6),
     );
 
 SnackBarThemeData _snackBarTheme() => const SnackBarThemeData(
@@ -220,7 +256,7 @@ SnackBarThemeData _snackBarTheme() => const SnackBarThemeData(
         color: Colors.white,
       ),
       behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: NphRadius.cardBorder),
+      shape: RoundedRectangleBorder(borderRadius: NphRadius.fieldBorder),
     );
 
 BottomNavigationBarThemeData _bottomNavTheme() => const BottomNavigationBarThemeData(
