@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>Naija Parts Hub</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Naija Parts Hub</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(FLUTTER_BUILD_NAME)</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleVersion</key>
+	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+
+	<!-- App Transport Security.
+	     NSAllowsLocalNetworking permits plaintext HTTP to local-network hosts
+	     only, which is what the Firebase Local Emulator Suite serves. It is the
+	     iOS counterpart to the Android network security config in
+	     android/app/src/debug/res/xml/. Deliberately NOT
+	     NSAllowsArbitraryLoads, which would disable ATS for every host and is
+	     a common App Store review rejection. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+
+	<!-- Usage descriptions for image_picker (SOW section 4, listing photos).
+	     A MISSING string here is a hard crash on iOS, not a denied permission —
+	     the system terminates the app the moment the picker is invoked. The
+	     text is shown verbatim in the permission dialog, so it must explain the
+	     purpose or App Review rejects it. -->
+	<key>NSCameraUsageDescription</key>
+	<string>Naija Parts Hub uses the camera so you can photograph parts for your listings.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Naija Parts Hub needs access to your photos so you can add existing images to your listings.</string>
+
+	<!-- TODO(ios): Firebase phone OTP additionally requires
+	     1. an APNs .p8 auth key uploaded to Firebase (paid Apple Developer
+	        account only — this is the long pole on the iOS track), and
+	     2. a CFBundleURLTypes entry containing REVERSED_CLIENT_ID from
+	        GoogleService-Info.plist, which does not exist until
+	        `flutterfire configure` has run.
+	     Without both, phone auth silently degrades to a reCAPTCHA web view. -->
+
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneClassName</key>
+					<string>UIWindowScene</string>
+					<key>UISceneConfigurationName</key>
+					<string>flutter</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+					<key>UISceneStoryboardFile</key>
+					<string>Main</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIMainStoryboardFile</key>
+	<string>Main</string>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+</dict>
+</plist>

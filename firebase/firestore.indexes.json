@@ -1,0 +1,203 @@
+{
+  "//": [
+    "Composite indexes for Naija Parts Hub.",
+    "",
+    "Every public query carries `publiclyVisible == true` as its first filter —",
+    "that single backend-maintained boolean stands in for the four-condition",
+    "public predicate, which keeps these indexes to three fields instead of six.",
+    "",
+    "Firestore prints a ready-made index-creation URL for any combination not",
+    "covered here; add new ones to this file rather than clicking that link, so",
+    "the deployed index set stays reproducible from source control."
+  ],
+  "indexes": [
+    {
+      "//": "Marketplace: newest listings (SOW section 7, default browse)",
+      "collectionGroup": "listings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "publiclyVisible", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "Filter by category",
+      "collectionGroup": "listings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "publiclyVisible", "order": "ASCENDING" },
+        { "fieldPath": "categoryId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "Filter by new/used condition",
+      "collectionGroup": "listings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "publiclyVisible", "order": "ASCENDING" },
+        { "fieldPath": "condition", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "Filter by business location",
+      "collectionGroup": "listings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "publiclyVisible", "order": "ASCENDING" },
+        { "fieldPath": "storeState", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "Category + condition combined",
+      "collectionGroup": "listings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "publiclyVisible", "order": "ASCENDING" },
+        { "fieldPath": "categoryId", "order": "ASCENDING" },
+        { "fieldPath": "condition", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "Category + state combined",
+      "collectionGroup": "listings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "publiclyVisible", "order": "ASCENDING" },
+        { "fieldPath": "categoryId", "order": "ASCENDING" },
+        { "fieldPath": "storeState", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "Search by name or part number (prefix tokens, SOW section 7)",
+      "collectionGroup": "listings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "publiclyVisible", "order": "ASCENDING" },
+        { "fieldPath": "searchTokens", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "Search narrowed by category",
+      "collectionGroup": "listings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "publiclyVisible", "order": "ASCENDING" },
+        { "fieldPath": "searchTokens", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "categoryId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "Price sort within the marketplace",
+      "collectionGroup": "listings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "publiclyVisible", "order": "ASCENDING" },
+        { "fieldPath": "priceKobo", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "//": "Virtual store page: one dealer's live listings (SOW section 6)",
+      "collectionGroup": "listings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "publiclyVisible", "order": "ASCENDING" },
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "Dealer's own inventory, split by draft/active/archived",
+      "collectionGroup": "listings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "updatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "publishListing counts active listings transactionally (SOW section 5)",
+      "collectionGroup": "listings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "//": "Admin moderation queue: removed listings, newest first",
+      "collectionGroup": "listings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "moderation.removed", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "Admin: pending business approvals queue (SOW section 3)",
+      "collectionGroup": "stores",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "Admin: subscription review by plan and expiry (SOW section 9)",
+      "collectionGroup": "stores",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "subscription.status", "order": "ASCENDING" },
+        { "fieldPath": "subscription.expiresAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "//": "Scheduled expiry sweep finds lapsed paid subscriptions",
+      "collectionGroup": "stores",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "subscription.plan", "order": "ASCENDING" },
+        { "fieldPath": "subscription.expiresAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "//": "Dealer payment history (SOW section 8)",
+      "collectionGroup": "payments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "initializedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "Admin payment-reference review, filtered by status",
+      "collectionGroup": "payments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "initializedAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "//": "Never range-query the raw Paystack payload; skip indexing it.",
+      "collectionGroup": "payments",
+      "fieldPath": "raw",
+      "indexes": []
+    },
+    {
+      "//": "Long free text is never used as a filter — indexing it wastes writes.",
+      "collectionGroup": "listings",
+      "fieldPath": "description",
+      "indexes": []
+    }
+  ]
+}

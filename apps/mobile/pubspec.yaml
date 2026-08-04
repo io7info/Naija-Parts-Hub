@@ -1,0 +1,106 @@
+name: naija_parts_hub
+description: "Naija Parts Hub — dealer app. Operated by Lytod Motors Ltd (RC 1207675). Android and iOS."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management. Chosen over `provider` for its first-class async/stream
+  # handling, which suits Firestore snapshot streams and callable futures.
+  flutter_riverpod: ^2.6.1
+
+  # Navigation — declarative routes, needed for the auth/approval gating.
+  go_router: ^14.6.2
+
+  # Firebase. Firestore's native offline persistence replaces the Hive layer
+  # entirely (ADR-001 #3): local cache, queued writes, and hasPendingWrites
+  # for the SOW section 10 "visible sync status" requirement.
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1
+  cloud_firestore: ^5.4.4
+  firebase_storage: ^12.3.2
+  cloud_functions: ^5.1.3
+  firebase_crashlytics: ^4.1.3
+
+  # Listing images: pick, compress to MAX_IMAGE_DIMENSION, upload to Storage.
+  image_picker: ^1.1.2
+  flutter_image_compress: ^2.3.0
+  cached_network_image: ^3.4.1
+  # Temp directory for the compression pass before upload. Declared directly
+  # rather than relied on transitively — see the dependency_overrides note.
+  path_provider: ^2.1.5
+
+  # Anything sensitive stays out of plaintext (ADR-001 #3).
+  flutter_secure_storage: ^9.2.2
+
+  # WhatsApp / phone handoff — wa.me deep links.
+  url_launcher: ^6.3.1
+
+  intl: ^0.19.0
+  uuid: ^4.5.1
+  cupertino_icons: ^1.0.8
+
+dependency_overrides:
+  # Pin below 2.3.0. path_provider_android 2.3.0+ depends on `jni`, which
+  # builds native code via CMake and forces Gradle to provision a ~1 GB NDK.
+  # Gradle's inline NDK downloader cannot resume, so a dropped connection
+  # leaves a malformed NDK that fails every later build with CXX1101.
+  #
+  # It reaches us absurdly: flutter_secure_storage -> *_windows -> path_provider
+  # -> path_provider_android, i.e. a Windows-only implementation dragging in the
+  # Android one on a project that only targets Android and iOS.
+  #
+  # Remove this override once the NDK is installed via Android Studio's SDK
+  # Manager (which resumes), or once path_provider_android drops jni.
+  path_provider_android: 2.2.17
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+# ---------------------------------------------------------------------------
+# Removed from the inherited pubspec, deliberately:
+#
+#   hive, hive_flutter, hive_generator, build_runner
+#       Replaced by Firestore offline persistence (ADR-001 #3).
+#   connectivity_plus
+#       Firestore manages its own reconnect; the old connectivity-triggered
+#       sync was the reason nothing synced for a dealer who stayed online.
+#   pdf, printing, share_plus, path_provider
+#       Thermal receipts belong to the POS feature, which is not Phase 1 scope.
+#   speech_to_text
+#       Voice input is not among the SOW section 4 listing fields. Dropping it
+#       also removes the RECORD_AUDIO permission and its store-review burden.
+#   provider, google_fonts
+#       Declared but never used in the inherited code.
+# ---------------------------------------------------------------------------
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/brand/
+
+  # Fonts are BUNDLED, not fetched at runtime.
+  #
+  # google_fonts downloads on first use, so a dealer opening the app on a poor
+  # connection — the normal case in this market — sees fallback type until the
+  # download finishes, and no brand type at all offline. Bundling costs ~1 MB of
+  # APK and removes that failure entirely.
+  #
+  # These are the variable builds google/fonts ships; Flutter maps fontWeight
+  # onto the weight axis, so one file covers every weight the design uses.
+  # OFL licence text ships alongside, as the licence requires.
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter.ttf
+    - family: Manrope
+      fonts:
+        - asset: assets/fonts/Manrope.ttf

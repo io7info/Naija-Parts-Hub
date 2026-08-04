@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "demo-naija-parts-hub"
+  },
+  "//": [
+    "The `demo-` prefix is meaningful, not cosmetic: the Firebase Emulator",
+    "Suite treats any demo-* project id as offline-only. No credentials are",
+    "required, and no call can ever reach a real Firebase project by accident.",
+    "",
+    "When the client's live project exists, add it as a named alias rather than",
+    "replacing this one:",
+    "  firebase use --add    # -> aliases 'prod' to the real project id",
+    "so local development keeps running against demo-* with no code changes."
+  ]
+}

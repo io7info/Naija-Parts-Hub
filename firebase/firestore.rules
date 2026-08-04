@@ -1,0 +1,307 @@
+rules_version = '2';
+
+// ===========================================================================
+// Naija Parts Hub — Firestore security rules
+// Operated by Lytod Motors Ltd | RC 1207675
+//
+// Threat model: the Flutter app and the Next.js site are NOT a security
+// boundary. Any dealer holding a valid ID token can call the Firestore REST
+// API directly, so SOW section 5 ("the limit cannot be bypassed through the
+// mobile app, web platform, or direct API access") is only true if it is
+// enforced here and in Cloud Functions.
+//
+// Architecture decision #4: approval, visibility, subscription and moderation
+// fields are backend-controlled and read-only to dealers.
+//
+// The protected field lists below MIRROR packages/contracts/src/security.ts,
+// which is the source of truth. Changing that file means changing this one.
+// ===========================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------------------------------------------------------------------
+    // Identity
+    // ---------------------------------------------------------------------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Admin status comes from a custom claim set via the Admin SDK only.
+    // Deliberately NOT read from a Firestore document — a document a dealer
+    // could reach would make privilege escalation one write away.
+    //
+    // `.get(key, default)` rather than `.role`: a bare property access on a
+    // token with no `role` claim raises an evaluation exception instead of
+    // returning false. That denies — the right answer, but by accident — and
+    // in an || chain a throw short-circuits the whole rule to deny, which
+    // could reject access some other clause should have permitted.
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.get('role', '') == 'super_admin';
+    }
+
+    // Store documents are keyed by the dealer's uid, so ownership is identity.
+    function isStoreOwner(storeId) {
+      return isSignedIn() && request.auth.uid == storeId;
+    }
+
+    // ---------------------------------------------------------------------
+    // Field-level guards
+    // ---------------------------------------------------------------------
+
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    function touchesNone(fields) {
+      return !changedKeys().hasAny(fields);
+    }
+
+    function onlyTouches(fields) {
+      return changedKeys().hasOnly(fields);
+    }
+
+    // Mirrors STORE_BACKEND_FIELDS
+    function storeBackendFields() {
+      return ['slug', 'status', 'rejectionReason', 'visible',
+              'activeListingCount', 'subscription', 'createdAt',
+              'approvedAt', 'reviewedBy'];
+    }
+
+    // Mirrors STORE_DEALER_FIELDS
+    function storeDealerFields() {
+      return ['businessName', 'ownerName', 'phone', 'whatsapp', 'cacNumber',
+              'address', 'state', 'city', 'description', 'updatedAt'];
+    }
+
+    // Mirrors LISTING_BACKEND_FIELDS
+    function listingBackendFields() {
+      return ['status', 'searchTokens', 'publiclyVisible', 'storeApproved',
+              'storeVisible', 'storeSlug', 'storeBusinessName', 'storeState',
+              'storeCity', 'storePhone', 'storeWhatsapp', 'moderation',
+              'createdAt', 'publishedAt'];
+    }
+
+    // Mirrors LISTING_DEALER_FIELDS
+    function listingDealerFields() {
+      return ['name', 'description', 'categoryId', 'condition', 'priceKobo',
+              'quantity', 'brand', 'partNumber', 'compatibleMake',
+              'compatibleModel', 'images', 'updatedAt'];
+    }
+
+    // ---------------------------------------------------------------------
+    // Validation (SOW section 11, "Input validation")
+    // ---------------------------------------------------------------------
+
+    function isFilled(v, maxLen) {
+      return v is string && v.size() > 0 && v.size() <= maxLen;
+    }
+
+    function validStoreProfile(d) {
+      return isFilled(d.businessName, 100)
+          && isFilled(d.ownerName, 100)
+          && isFilled(d.phone, 20)
+          && isFilled(d.cacNumber, 40)
+          && isFilled(d.address, 200)
+          && isFilled(d.state, 60)
+          && isFilled(d.city, 60)
+          && d.whatsapp is string && d.whatsapp.size() <= 20
+          && d.description is string && d.description.size() <= 2000;
+    }
+
+    function validListingPayload(d) {
+      return isFilled(d.name, 140)
+          && isFilled(d.categoryId, 60)
+          && (d.condition == 'new' || d.condition == 'used')
+          // Money is integer kobo. Rejecting floats keeps payment
+          // reconciliation exact; the range blocks negative-price listings.
+          && d.priceKobo is int && d.priceKobo >= 0 && d.priceKobo <= 1000000000
+          && d.quantity is int && d.quantity >= 0 && d.quantity <= 100000
+          && d.description is string && d.description.size() <= 2000
+          && d.brand is string && d.brand.size() <= 60
+          && d.partNumber is string && d.partNumber.size() <= 60
+          && d.compatibleMake is string && d.compatibleMake.size() <= 60
+          && d.compatibleModel is string && d.compatibleModel.size() <= 60
+          // SOW section 4: up to three images.
+          && d.images is list && d.images.size() <= 3;
+    }
+
+    // ---------------------------------------------------------------------
+    // stores/{storeId}
+    //
+    // Created exclusively by the registerStore callable, which reserves the
+    // slug in the same transaction. Dealers may edit profile fields only.
+    // ---------------------------------------------------------------------
+
+    match /stores/{storeId} {
+
+      // Public storefront pages (SOW section 6) read approved, visible stores.
+      //
+      // The `resource != null` guard is load-bearing. On a get for a document
+      // that does not exist, `resource` is null and `resource.data.status`
+      // raises a Null value error rather than evaluating false — which denies
+      // the read.
+      function isPubliclyVisible() {
+        return resource != null
+            && resource.data.status == 'approved'
+            && resource.data.visible == true;
+      }
+
+      // Ordering matters as much as the guard: isStoreOwner touches only the
+      // auth token, so it is evaluated first and short-circuits.
+      //
+      // A dealer who has signed in but not yet registered MUST be able to read
+      // their own non-existent store document — that read is precisely what
+      // routes them to the registration screen. Without this the auth gate
+      // shows a permission error to every new dealer.
+      allow get: if isStoreOwner(storeId) || isAdmin() || isPubliclyVisible();
+
+      // Enumerating every dealer is not a public feature; the marketplace
+      // browses `listings`, and storefronts resolve via `storeSlugs`.
+      allow list: if isAdmin();
+
+      // Slug reservation must be transactional -> callable only.
+      allow create: if false;
+
+      allow update: if isAdmin()
+        || (
+          isStoreOwner(storeId)
+          && onlyTouches(storeDealerFields())
+          && touchesNone(storeBackendFields())
+          && validStoreProfile(request.resource.data)
+          // A suspended dealer cannot edit their way back into visibility.
+          && resource.data.status != 'suspended'
+        );
+
+      // Deletion runs through the deleteAccount callable so listings, images,
+      // the slug reservation and the auth user are cleaned up together.
+      // (Apple Guideline 5.1.1(v) / Google Play account-deletion requirement.)
+      allow delete: if false;
+    }
+
+    // ---------------------------------------------------------------------
+    // listings/{listingId}
+    //
+    // Top-level so the public marketplace can query across all dealers in one
+    // indexed read. Store state is denormalized onto each document by a
+    // trigger, so no rule here needs a get() on the parent store — that would
+    // bill an extra document read per document evaluated, on every query.
+    // ---------------------------------------------------------------------
+
+    match /listings/{listingId} {
+
+      // Mirrors PUBLIC_LISTING_FILTER in packages/contracts/src/listing.ts.
+      //
+      // A single backend-maintained boolean rather than the four underlying
+      // conditions: Firestore only permits a `list` whose filters prove every
+      // result satisfies this rule, so a four-condition rule would force every
+      // public query to carry four `where` clauses and a 6-field composite
+      // index. `get()` with a default keeps a freshly created draft — one the
+      // onCreate trigger has not populated yet — from erroring the rule.
+      // `resource != null` guards a get for a document that does not exist,
+      // where `resource` is null and any property access raises rather than
+      // evaluating false.
+      function isPublic() {
+        return resource != null && resource.data.get('publiclyVisible', false) == true;
+      }
+
+      function ownsListing() {
+        return isSignedIn()
+            && resource != null
+            && resource.data.storeId == request.auth.uid;
+      }
+
+      // A signed-in dealer must be able to observe that a listing does not
+      // exist — for instance after an offline write was rejected on replay and
+      // rolled back locally. Returning "not found" is the correct answer; a
+      // permission error would look like a sync fault.
+      allow get: if (resource == null && isSignedIn())
+                  || ownsListing()
+                  || isAdmin()
+                  || isPublic();
+
+      // On a query, rules are evaluated per candidate document, so `resource`
+      // is never null here.
+      allow list: if isPublic() || ownsListing() || isAdmin();
+
+      // Drafts are a plain client write — no transaction needed, and it keeps
+      // the hot path offline-capable. The dealer may only claim their own
+      // store and may only create in 'draft'. An onCreate trigger fills in
+      // searchTokens, the denormalized store fields and moderation defaults.
+      //
+      // Publishing is unreachable here: 'active' is rejected, and only the
+      // publishListing callable can set it, after a transactional count.
+      allow create: if isSignedIn()
+        && request.resource.data.storeId == request.auth.uid
+        && request.resource.data.status == 'draft'
+        && validListingPayload(request.resource.data);
+
+      allow update: if isAdmin()
+        || (
+          ownsListing()
+          && request.resource.data.storeId == resource.data.storeId  // immutable
+          && onlyTouches(listingDealerFields())
+          && touchesNone(listingBackendFields())
+          && validListingPayload(request.resource.data)
+        );
+
+      // Deletion goes through a callable so Storage images and the store's
+      // activeListingCount stay consistent.
+      allow delete: if isAdmin();
+    }
+
+    // ---------------------------------------------------------------------
+    // categories/{categoryId} — admin-managed taxonomy (SOW section 9)
+    // ---------------------------------------------------------------------
+
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ---------------------------------------------------------------------
+    // Backend-only collections
+    //
+    // Cloud Functions use the Admin SDK, which bypasses these rules entirely,
+    // so denying every client write here costs us nothing and closes the
+    // direct-REST path for everyone else.
+    // ---------------------------------------------------------------------
+
+    // Paystack transactions. Dealers read their own payment history
+    // (SOW section 8); admins review every reference (SOW section 9).
+    match /payments/{reference} {
+      allow get, list: if isAdmin()
+        || (isSignedIn() && resource.data.storeId == request.auth.uid);
+      allow write: if false;
+    }
+
+    // Slug uniqueness ledger. Public read so the web app resolves
+    // /store/{slug} -> storeId in a single lookup.
+    match /storeSlugs/{slug} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Admin audit trail. Never dealer-readable — it names admin accounts.
+    match /adminActions/{actionId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // Aggregate counters maintained by triggers.
+    match /counters/{counterId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // ---------------------------------------------------------------------
+    // Default deny. Any collection added later stays locked until a rule and
+    // a test exist for it.
+    // ---------------------------------------------------------------------
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

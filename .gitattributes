@@ -1,0 +1,28 @@
+# Normalize line endings so Windows/macOS/Linux and CI agree.
+* text=auto eol=lf
+
+# Windows-only scripts keep CRLF
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# Binary — never diff or convert
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.webp   binary
+*.ico    binary
+*.pdf    binary
+*.docx   binary
+*.jks    binary
+*.keystore binary
+*.p8     binary
+*.p12    binary
+*.ttf    binary
+*.otf    binary
+
+# Generated / vendored — collapse in PR diffs
+*.g.dart        linguist-generated=true
+*.freezed.dart  linguist-generated=true
+package-lock.json  linguist-generated=true -diff
+pubspec.lock       linguist-generated=true

@@ -1,0 +1,42 @@
+{
+  "name": "naija-parts-hub",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Naija Parts Hub — Phase 1 MVP. Operated by Lytod Motors Ltd (RC 1207675).",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20 <23"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/web",
+    "functions",
+    "firebase/tests"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "contracts:build": "npm run build --workspace @nph/contracts",
+    "check:rules-sync": "npm run contracts:build && node scripts/check-rules-sync.mjs",
+    "verify": "npm run check:rules-sync && npm run check:binaries && npm run typecheck",
+    "emulators": "firebase emulators:start --project demo-naija-parts-hub",
+    "seed": "npm run seed --workspace @nph/functions",
+    "test:rules": "npm run test:rules --workspace @nph/firebase-tests",
+    "test:limit": "npm run test:limit --workspace @nph/firebase-tests",
+    "test:storage": "npm run test:storage --workspace @nph/firebase-tests",
+    "test:offline": "npm run test:offline --workspace @nph/firebase-tests",
+    "test:emulator": "npm run test --workspace @nph/firebase-tests",
+    "admin": "npm run admin --workspace @nph/functions --",
+    "test:admin-routes": "npm run test:admin-routes --workspace @nph/firebase-tests",
+    "check:binaries": "node scripts/check-binary-integrity.mjs",
+    "test:mobile-env": "cd apps/mobile && flutter test test/core/env_switch_test.dart && flutter test test/core/env_switch_test.dart --dart-define=USE_FIREBASE_EMULATOR=false",
+    "seed:marketplace": "npm run seed:marketplace --workspace @nph/functions",
+    "test:admin-data": "npm run test:admin-data --workspace @nph/firebase-tests"
+  },
+  "devDependencies": {
+    "firebase-tools": "^13.29.1",
+    "typescript": "^5.7.2"
+  }
+}

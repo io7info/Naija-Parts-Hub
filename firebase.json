@@ -1,0 +1,49 @@
+{
+  "firestore": {
+    "rules": "firebase/firestore.rules",
+    "indexes": "firebase/firestore.indexes.json"
+  },
+  "storage": {
+    "rules": "firebase/storage.rules"
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "runtime": "nodejs22",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "*.log",
+        "src/**",
+        "**/*.test.ts",
+        "tsconfig*.json"
+      ],
+      "predeploy": [
+        "npm --prefix \"$PROJECT_DIR\" run contracts:build",
+        "npm --prefix \"$RESOURCE_DIR\" run build"
+      ]
+    }
+  ],
+  "emulators": {
+    "//": [
+      "host 0.0.0.0 binds every interface rather than 127.0.0.1 only.",
+      "",
+      "The Android emulator reaches the host through the 10.0.2.2 alias, and a",
+      "physical device over adb/LAN cannot reach a loopback-only bind at all.",
+      "Binding all interfaces removes a whole class of 'Failed to connect to",
+      "10.0.2.2:9099' confusion.",
+      "",
+      "Trade-off: anything on the same network can reach these ports while they",
+      "run. Acceptable here because the emulators hold only demo-* data, never",
+      "credentials, and never touch a real Firebase project. Do not do this on",
+      "an untrusted network."
+    ],
+    "auth": { "host": "0.0.0.0", "port": 9099 },
+    "firestore": { "host": "0.0.0.0", "port": 8080 },
+    "storage": { "host": "0.0.0.0", "port": 9199 },
+    "functions": { "host": "0.0.0.0", "port": 5001 },
+    "ui": { "enabled": true, "host": "0.0.0.0", "port": 4000 },
+    "singleProjectMode": true
+  }
+}

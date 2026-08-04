@@ -1,0 +1,83 @@
+/// Environment configuration.
+///
+/// Everything that differs between local emulator development and the client's
+/// live Firebase project is resolved here, from `--dart-define` values with
+/// emulator-friendly defaults. No feature code branches on environment, so
+/// switching to the real project is a build-flag change, not a rewrite.
+///
+/// Local (default — no flags needed):
+///   flutter run
+///
+/// Against a real project:
+///   flutter run --dart-define=USE_FIREBASE_EMULATOR=false
+///
+/// The emulator host differs per platform: the Android emulator reaches the
+/// host machine's loopback at 10.0.2.2, not 127.0.0.1.
+library;
+
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
+
+enum AppEnvironment { emulator, live }
+
+abstract final class Env {
+  /// Defaults to true so a fresh checkout runs fully offline against the
+  /// Local Emulator Suite with no credentials and no Firebase project.
+  static const bool useEmulator =
+      bool.fromEnvironment('USE_FIREBASE_EMULATOR', defaultValue: true);
+
+  static AppEnvironment get current =>
+      useEmulator ? AppEnvironment.emulator : AppEnvironment.live;
+
+  /// Matches the `demo-` prefix in .firebaserc. The Emulator Suite treats any
+  /// demo-* project id as offline-only: no credentials, and no possibility of
+  /// a call reaching a real project by accident.
+  static const String demoProjectId =
+      String.fromEnvironment('DEMO_PROJECT_ID', defaultValue: 'demo-naija-parts-hub');
+
+  /// Placeholder API key for emulator runs.
+  ///
+  /// Fake, but it must have the SHAPE of a real key: `AIzaSy` followed by 33
+  /// characters. The Android Firebase SDK validates the format before issuing
+  /// any request, so a casual placeholder like 'demo-api-key' fails with
+  ///
+  ///   java.lang.IllegalArgumentException: Please set a valid API key.
+  ///
+  /// The call never leaves the device, so the emulator logs nothing and the
+  /// failure looks like a connectivity problem rather than a config one. Auth
+  /// and Firestore tolerate a malformed key; Cloud Functions does not.
+  static const String demoApiKey = 'AIzaSyDemoEmulatorKeyNotRealNotUsed1234';
+
+  /// 10.0.2.2 is the Android emulator's alias for the host loopback.
+  /// A physical device needs the host's LAN IP passed in explicitly.
+  static String get emulatorHost {
+    const override = String.fromEnvironment('EMULATOR_HOST');
+    if (override.isNotEmpty) return override;
+    if (kIsWeb) return 'localhost';
+    return Platform.isAndroid ? '10.0.2.2' : 'localhost';
+  }
+
+  static const int authPort = int.fromEnvironment('EMULATOR_AUTH_PORT', defaultValue: 9099);
+  static const int firestorePort =
+      int.fromEnvironment('EMULATOR_FIRESTORE_PORT', defaultValue: 8080);
+  static const int storagePort =
+      int.fromEnvironment('EMULATOR_STORAGE_PORT', defaultValue: 9199);
+  static const int functionsPort =
+      int.fromEnvironment('EMULATOR_FUNCTIONS_PORT', defaultValue: 5001);
+
+  /// Must match setGlobalOptions({region}) in functions/src/index.ts, or
+  /// callables resolve to the wrong endpoint against a live project.
+  static const String functionsRegion =
+      String.fromEnvironment('FUNCTIONS_REGION', defaultValue: 'europe-west1');
+
+  /// Shown when a free store hits the 10-listing limit. Web-only by design —
+  /// selling an in-app upgrade would engage App Store Guideline 3.1.1.
+  static const String upgradeUrl = String.fromEnvironment(
+    'UPGRADE_URL',
+    defaultValue: 'https://naijapartshub.ng/upgrade',
+  );
+
+  static String get describe =>
+      useEmulator ? 'Emulator ($emulatorHost) · $demoProjectId' : 'Live Firebase project';
+}

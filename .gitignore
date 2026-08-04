@@ -1,0 +1,127 @@
+# ---------------------------------------------------------------------------
+# Naija Parts Hub — monorepo .gitignore
+# ---------------------------------------------------------------------------
+
+# === SECRETS AND SIGNING CREDENTIALS =======================================
+# Never commit these. A leaked keystore cannot be rotated on Google Play.
+**/key.properties
+**/*.jks
+**/*.keystore
+**/*.p8
+**/*.p12
+**/*.mobileprovision
+**/*.cer
+**/GoogleService-Info.plist
+**/google-services.json
+**/firebase_options.dart
+**/serviceAccountKey*.json
+**/*service-account*.json
+.env
+.env.*
+# Spelled out even though `.env.*` already covers them, so the contract is
+# obvious to anyone scanning this file for "is my local config safe?".
+.env.local
+.env*.local
+# Committed templates. These carry variable NAMES only, never values, and the
+# negations must be listed after the patterns above or git ignores them too.
+!.env.example
+!.env.local.example
+# Optional local seed photography. The seeder reads the committed design
+# assets in apps/web/public/products by default, so this directory is only for
+# overriding them with your own fixtures — which should stay local.
+functions/scripts/seed-images/*
+!functions/scripts/seed-images/README.md
+.runtimeconfig.json
+
+# === FLUTTER / DART ========================================================
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+**/doc/api/
+*.g.dart
+*.freezed.dart
+*.mocks.dart
+
+# Android
+apps/mobile/android/.gradle/
+apps/mobile/android/local.properties
+apps/mobile/android/app/debug/
+apps/mobile/android/app/profile/
+apps/mobile/android/app/release/
+*.iml
+
+# iOS
+apps/mobile/ios/Pods/
+apps/mobile/ios/.symlinks/
+apps/mobile/ios/Flutter/Flutter.framework
+apps/mobile/ios/Flutter/Flutter.podspec
+apps/mobile/ios/Flutter/Generated.xcconfig
+apps/mobile/ios/Flutter/flutter_export_environment.sh
+apps/mobile/ios/Runner/GeneratedPluginRegistrant.*
+**/xcuserdata/
+**/DerivedData/
+
+# === NODE / NEXT.JS / FUNCTIONS ============================================
+node_modules/
+.next/
+out/
+dist/
+lib/**/*.js.map
+*.tsbuildinfo
+.turbo/
+.vercel/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Compiled Cloud Functions output
+functions/lib/
+
+# === DESIGN HAND-OFF =======================================================
+# Source archives are working material, not deliverables. The design pack was
+# extracted into apps/web and apps/mobile; keeping the 10 MB zip as well put a
+# second copy of every asset in the repo. Extract new packs, commit what they
+# contribute, and leave the archive out.
+*.zip
+
+# === FIREBASE ==============================================================
+# The FlutterFire CLI's own bookkeeping — it records which Firebase apps this
+# checkout is wired to and where to write google-services.json. Ignored for the
+# same reason those generated files are: it names the client's project, and a
+# fresh checkout regenerates it with `flutterfire configure`.
+#
+# Anchored to apps/mobile deliberately. A bare `firebase.json` would also match
+# the root one, which carries the emulator ports and rules paths the whole
+# project depends on.
+apps/mobile/firebase.json
+
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+database-debug.log
+pubsub-debug.log
+
+# === EDITORS / OS ==========================================================
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.shared.json
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === TEST / COVERAGE =======================================================
+coverage/
+*.lcov
+test-results/
+playwright-report/
+
+# Next.js
+apps/web/.next/
+apps/web/out/

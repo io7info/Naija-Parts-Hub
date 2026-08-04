@@ -1,0 +1,72 @@
+rules_version = '2';
+
+// ===========================================================================
+// Naija Parts Hub — Cloud Storage security rules
+//
+// SOW section 4: "Images will be stored in Firebase Storage instead of local
+// device paths." SOW section 11: "Secure Firebase Storage rules."
+//
+// Layout: stores/{storeId}/listings/{listingId}/{imageId}
+// storeId is the dealer's uid, so the path itself carries ownership.
+// ===========================================================================
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // `.get(key, default)` rather than `.role`: a bare property access on a
+    // token that has no `role` claim raises an evaluation exception rather
+    // than returning false. That currently denies (the right answer, but by
+    // accident) and floods the emulator log. In an || chain it is a genuine
+    // hazard — a throw short-circuits the whole rule to deny, which could
+    // reject an access some other clause should have permitted.
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.get('role', '') == 'super_admin';
+    }
+
+    function isOwner(storeId) {
+      return isSignedIn() && request.auth.uid == storeId;
+    }
+
+    // 500 KB. Clients compress to MAX_IMAGE_DIMENSION before upload; this is
+    // the backstop that stops an unmodified client from filling the bucket.
+    function withinSizeLimit() {
+      return request.resource.size <= 512 * 1024;
+    }
+
+    // Explicit allowlist, not `image/*` — SVG is an image type that can carry
+    // script and would be served from our own origin.
+    function isAllowedImageType() {
+      return request.resource.contentType in ['image/jpeg', 'image/png', 'image/webp'];
+    }
+
+    match /stores/{storeId}/listings/{listingId}/{imageId} {
+      // Public: the marketplace and storefront pages render these directly,
+      // including for signed-out visitors (SOW sections 6 and 7).
+      allow read: if true;
+
+      allow create, update: if isOwner(storeId)
+        && withinSizeLimit()
+        && isAllowedImageType();
+
+      allow delete: if isOwner(storeId) || isAdmin();
+    }
+
+    // Store logo / avatar, same constraints.
+    match /stores/{storeId}/profile/{imageId} {
+      allow read: if true;
+      allow create, update: if isOwner(storeId)
+        && withinSizeLimit()
+        && isAllowedImageType();
+      allow delete: if isOwner(storeId) || isAdmin();
+    }
+
+    // Default deny for every other path.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
