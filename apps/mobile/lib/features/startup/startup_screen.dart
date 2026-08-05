@@ -55,7 +55,9 @@ class StartupScreen extends StatelessWidget {
                         const Divider(height: 20),
                         _row(
                           'Firebase',
-                          firebase.label,
+                          // Diagnostics screen, shown only when Firebase failed to start.
+              // The label names the backend, so it is debug-only.
+              kDebugMode ? firebase.label : 'Configuration problem',
                           ok: firebase.isReady,
                         ),
                       ],

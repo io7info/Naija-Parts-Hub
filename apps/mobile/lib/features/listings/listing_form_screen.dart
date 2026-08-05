@@ -1,42 +1,78 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../core/errors.dart';
 import '../../design/components.dart';
 import '../../design/tokens.dart';
 import '../../models/listing.dart';
+import '../../services/categories_service.dart';
 import '../../services/image_upload_service.dart';
 import '../../services/listing_service.dart';
+import '../../services/store_service.dart';
 import '../../services/sync_status_service.dart';
+import '../shell/shell_providers.dart';
+import 'listings_screen.dart';
 
 /// Add or edit a listing (SOW §4).
 ///
-/// Edit was missing entirely before this: the form only ever created, and
-/// `ListingService.updateDraft` had no caller — so a dealer who mistyped a
-/// price had to delete and recreate, burning and re-consuming a quota slot.
-/// Passing [existing] switches the screen into edit mode.
+/// Two presentations, one screen:
 ///
-/// Photos are capped at three, not the six the design mockup shows. Three is
-/// what SOW §4 specifies, what `MAX_IMAGES_PER_LISTING` declares, and what
-/// `firestore.rules` enforces with `d.images.size() <= 3` — a four-image write
-/// is rejected by the server, so offering six would build a form that fails on
-/// submit.
+///   embedded: true   the Add Listing shell pane. Keeps its State across tab
+///                    switches, so a half-filled form survives a trip to the
+///                    dashboard. Reset by bumping listingFormResetProvider.
+///   embedded: false  a pushed route for editing one existing listing, which
+///                    must not displace the in-progress Add pane.
+///
+/// Photos are capped at three — SOW §4, `MAX_IMAGES_PER_LISTING`, and
+/// `firestore.rules` (`d.images.size() <= 3`) all agree. The design mockup says
+/// six; a six-slot form would be rejected by the server on save.
 class ListingFormScreen extends ConsumerStatefulWidget {
-  const ListingFormScreen({super.key, required this.storeId, this.existing});
+  const ListingFormScreen({
+    super.key,
+    required this.storeId,
+    this.existing,
+    this.embedded = false,
+  });
 
   final String storeId;
   final Listing? existing;
+  final bool embedded;
 
   @override
   ConsumerState<ListingFormScreen> createState() => _ListingFormScreenState();
 }
 
+/// One image slot, which may be uploading, uploaded, or failed.
+///
+/// Modelled explicitly rather than as a bare list of URLs so a failed upload
+/// can stay on screen with a Retry instead of vanishing — a dealer on a market
+/// stall's connection sees failures constantly, and silently dropping the photo
+/// they just took is the worst possible response.
+class _Slot {
+  _Slot({this.local, this.uploaded, this.progress, this.error});
+
+  /// The picked file, kept for the preview while uploading and — crucially —
+  /// so a failed upload can be retried without asking the dealer to take the
+  /// photo again.
+  final XFile? local;
+  final ListingImage? uploaded;
+  final double? progress;
+  final String? error;
+
+  bool get isUploading => progress != null && error == null && uploaded == null;
+  bool get isFailed => error != null;
+  bool get isDone => uploaded != null;
+}
+
 class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _scroll = ScrollController();
 
   final _name = TextEditingController();
   final _description = TextEditingController();
@@ -47,58 +83,129 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
   final _make = TextEditingController();
   final _model = TextEditingController();
 
-  /// Placeholder taxonomy until `categories` is admin-managed (SOW §9).
-  static const _categories = [
-    'engine',
-    'brake',
-    'suspension',
-    'electrical',
-    'body',
-    'transmission',
-    'other',
-  ];
-
-  String _category = 'engine';
+  /// Null means "not chosen yet". The form refuses to submit until the dealer
+  /// picks one — the previous default of 'engine' meant a mis-categorised part
+  /// was the path of least resistance.
+  String? _category;
   String _condition = 'new';
-  final List<ListingImage> _images = [];
+  final List<_Slot> _slots = [];
 
   bool _busy = false;
-  double? _uploadProgress;
   String? _error;
 
+  /// The id this listing will have, reserved before anything is written.
+  ///
+  /// Photos upload straight to `stores/{uid}/listings/{_listingId}/...`, which
+  /// is where they belong once the document exists — so nothing has to be moved
+  /// on save, and every object is attributable to a listing even before that
+  /// listing is created.
+  ///
+  /// Resolved in initState, not lazily: a `late final` initialiser runs on
+  /// first *access*, which put a Firestore call inside the upload path and made
+  /// a backend failure look like a failed photo.
+  late final String _listingId;
+
+  /// Captured in initState so [dispose] can still reach it.
+  ///
+  /// Riverpod throws "Cannot use ref after the widget was disposed" for any
+  /// `ref.read` during dispose — so reading the service there broke the orphan
+  /// cleanup in precisely the case it exists for: a form the dealer abandoned
+  /// after uploading photos.
+  late final ImageUploadService _uploads;
+
+  /// Set once the work is safely in Firestore. Guards the dispose-time cleanup:
+  /// a saved listing's photos must obviously survive.
+  bool _saved = false;
+
   bool get _isEdit => widget.existing != null;
+  bool get _uploading => _slots.any((s) => s.isUploading);
 
   @override
   void initState() {
     super.initState();
-    final existing = widget.existing;
-    if (existing == null) return;
 
-    _name.text = existing.name;
-    _description.text = existing.description;
-    // Kobo back to naira for display. Integer division keeps whole naira whole
-    // rather than rendering "28500.0".
-    _price.text = (existing.priceKobo / 100).toStringAsFixed(
-      existing.priceKobo % 100 == 0 ? 0 : 2,
-    );
-    _quantity.text = '${existing.quantity}';
-    _brand.text = existing.brand;
-    _partNumber.text = existing.partNumber;
-    _make.text = existing.compatibleMake;
-    _model.text = existing.compatibleModel;
-    _category = _categories.contains(existing.categoryId) ? existing.categoryId : 'other';
-    _condition = existing.condition == 'used' ? 'used' : 'new';
-    _images.addAll(existing.images);
+    _uploads = ref.read(imageUploadServiceProvider);
+    _listingId =
+        widget.existing?.listingId ?? ref.read(listingServiceProvider).newListingId();
+
+    final existing = widget.existing;
+    if (existing != null) {
+      _name.text = existing.name;
+      _description.text = existing.description;
+      // Kobo back to naira. Integer division keeps whole naira whole rather
+      // than rendering "28500.0".
+      _price.text = (existing.priceKobo / 100).toStringAsFixed(
+        existing.priceKobo % 100 == 0 ? 0 : 2,
+      );
+      _quantity.text = '${existing.quantity}';
+      _brand.text = existing.brand;
+      _partNumber.text = existing.partNumber;
+      _make.text = existing.compatibleMake;
+      _model.text = existing.compatibleModel;
+      _category = existing.categoryId.isEmpty ? null : existing.categoryId;
+      _condition = existing.condition == 'used' ? 'used' : 'new';
+      _slots.addAll(existing.images.map((i) => _Slot(uploaded: i)));
+    }
+
+    for (final c in _controllers) {
+      c.addListener(_markDirty);
+    }
   }
+
+  List<TextEditingController> get _controllers => [
+        _name, _description, _price, _quantity, _brand, _partNumber, _make, _model,
+      ];
+
+  /// Publishes "there is unsaved work here" to the shell.
+  ///
+  /// Only meaningful for the embedded pane — the pushed edit route is guarded
+  /// by PopScope instead, because leaving it *is* a pop.
+  void _markDirty() {
+    if (!widget.embedded || _busy) return;
+    if (!ref.read(listingFormDirtyProvider)) {
+      ref.read(listingFormDirtyProvider.notifier).state = true;
+    }
+  }
+
+  bool get _hasContent =>
+      _controllers.any((c) => c.text.trim().isNotEmpty) ||
+      _slots.isNotEmpty ||
+      _category != null;
 
   @override
   void dispose() {
-    for (final c in [
-      _name, _description, _price, _quantity, _brand, _partNumber, _make, _model,
-    ]) {
+    _cleanUpAbandonedUploads();
+    for (final c in _controllers) {
+      c.removeListener(_markDirty);
       c.dispose();
     }
+    _scroll.dispose();
     super.dispose();
+  }
+
+  /// Deletes photos uploaded for a listing that was never saved.
+  ///
+  /// A dealer can pick three photos, wait for them to upload, then discard the
+  /// form — via the tab-change guard, the back gesture, or by killing the app.
+  /// Those objects are referenced by nothing and would sit in Storage forever,
+  /// billed and unreachable.
+  ///
+  /// Runs from dispose, so it cannot be awaited. Fire-and-forget is right here:
+  /// nothing depends on the result, and the paths are captured synchronously
+  /// before the State goes away. Storage rules already restrict deletion to
+  /// `stores/{uid}/...`, so a stale call cannot touch another dealer's objects.
+  ///
+  /// Skipped entirely in edit mode: those photos belong to a listing that
+  /// exists, and removing one is an explicit action with its own delete call.
+  void _cleanUpAbandonedUploads() {
+    if (_saved || _isEdit) return;
+
+    final orphans = _slots.where((s) => s.isDone).map((s) => s.uploaded!.path).toList();
+    if (orphans.isEmpty) return;
+
+    for (final path in orphans) {
+      unawaited(_uploads.deleteAt(path));
+    }
   }
 
   /// True only when Firestore is serving from cache — i.e. we know we are
@@ -107,52 +214,90 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
   bool get _offline =>
       ref.watch(syncStatusProvider).valueOrNull?.state == SyncState.offline;
 
-  Future<void> _addImage({required bool fromCamera}) async {
-    if (_images.length >= ImageUploadService.maxImages) return;
+  // --- Images --------------------------------------------------------------
 
-    final service = ref.read(imageUploadServiceProvider);
-    final picked = await service.pick(fromCamera: fromCamera);
+  Future<void> _addImage({required bool fromCamera}) async {
+    if (_slots.length >= ImageUploadService.maxImages) return;
+
+    final picked = await _uploads.pick(fromCamera: fromCamera);
     if (picked == null) return;
 
+    final slot = _Slot(local: picked, progress: 0);
     setState(() {
-      _uploadProgress = 0;
+      _slots.add(slot);
       _error = null;
     });
+    _markDirty();
+    await _upload(slot);
+  }
+
+  Future<void> _upload(_Slot slot) async {
+    final index = _slots.indexOf(slot);
+    if (index < 0 || slot.local == null) return;
+
+    setState(() => _slots[index] = _Slot(local: slot.local, progress: 0));
 
     try {
-      final image = await service.upload(
-        storeId: widget.storeId,
-        // Uploads land under the listing's own id when editing, and under a
-        // per-session drafts folder otherwise. The previous version passed the
-        // literal string 'drafts' for every upload from every dealer, so every
-        // abandoned form's photos piled into one directory with nothing to tie
-        // them back to a listing.
-        listingId: widget.existing?.listingId ?? 'drafts',
-        source: picked,
-        onProgress: (p) {
-          if (mounted) setState(() => _uploadProgress = p);
-        },
-      );
-      if (mounted) setState(() => _images.add(image));
+      final image = await _uploads.upload(
+            storeId: widget.storeId,
+            listingId: _listingId,
+            source: slot.local!,
+            onProgress: (p) {
+              if (!mounted) return;
+              final i = _slots.indexWhere((s) => s.local == slot.local);
+              if (i >= 0) setState(() => _slots[i] = _Slot(local: slot.local, progress: p));
+            },
+          );
+      if (!mounted) return;
+      final i = _slots.indexWhere((s) => s.local == slot.local);
+      if (i >= 0) setState(() => _slots[i] = _Slot(local: slot.local, uploaded: image));
     } catch (e) {
-      if (mounted) {
-        setState(() => _error = 'Image upload failed. ${friendlyError(e)}');
+      if (!mounted) return;
+      final i = _slots.indexWhere((s) => s.local == slot.local);
+      if (i >= 0) {
+        setState(() => _slots[i] = _Slot(local: slot.local, error: friendlyError(e)));
       }
-    } finally {
-      if (mounted) setState(() => _uploadProgress = null);
     }
   }
 
-  Future<void> _removeImage(int index) async {
-    final image = _images[index];
-    setState(() => _images.removeAt(index));
+  Future<void> _removeSlot(int index) async {
+    final slot = _slots[index];
+    setState(() => _slots.removeAt(index));
+    _markDirty();
     // Best-effort: an orphaned object costs storage, but blocking the dealer on
     // a delete that may fail offline costs them the edit.
-    await ref.read(imageUploadServiceProvider).deleteAt(image.path);
+    if (slot.uploaded != null) {
+      await _uploads.deleteAt(slot.uploaded!.path);
+    }
   }
 
+  /// Promotes a photo to first position — first image is the one the
+  /// marketplace shows as the thumbnail, so "main image" is just order.
+  void _makeMain(int index) {
+    if (index == 0) return;
+    setState(() {
+      final slot = _slots.removeAt(index);
+      _slots.insert(0, slot);
+    });
+    _markDirty();
+  }
+
+  // --- Save ----------------------------------------------------------------
+
   Future<void> _save({required bool publish}) async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
+    // Guards against a double tap landing two writes: _busy is set before any
+    // await, and every exit path resets it.
+    if (_busy) return;
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      // Scroll back to the first field so the dealer can see what failed —
+      // otherwise a validation error 400 px above the button is invisible.
+      // Fire-and-forget: nothing depends on the animation finishing.
+      unawaited(
+        _scroll.animateTo(0, duration: const Duration(milliseconds: 250), curve: Curves.easeOut),
+      );
+      return;
+    }
+    if (publish && _uploading) return;
 
     setState(() {
       _busy = true;
@@ -160,50 +305,52 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
     });
 
     final messenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
     final service = ref.read(listingServiceProvider);
+    final images = _slots.where((s) => s.isDone).map((s) => s.uploaded!).toList();
 
     try {
-      // Naira in, kobo stored. Money is never a double.
       final naira = double.tryParse(_price.text.trim()) ?? 0;
       final priceKobo = (naira * 100).round();
-
-      final fields = <String, dynamic>{
-        'name': _name.text.trim(),
-        'description': _description.text.trim(),
-        'categoryId': _category,
-        'condition': _condition,
-        'priceKobo': priceKobo,
-        'quantity': int.tryParse(_quantity.text.trim()) ?? 0,
-        'brand': _brand.text.trim(),
-        'partNumber': _partNumber.text.trim(),
-        'compatibleMake': _make.text.trim(),
-        'compatibleModel': _model.text.trim(),
-        'images': _images.map((i) => i.toMap()).toList(),
-      };
 
       final String listingId;
       if (_isEdit) {
         listingId = widget.existing!.listingId;
-        await service.updateDraft(listingId, fields);
+        await service.updateDraft(listingId, {
+          'name': _name.text.trim(),
+          'description': _description.text.trim(),
+          'categoryId': _category!,
+          'condition': _condition,
+          'priceKobo': priceKobo,
+          'quantity': int.tryParse(_quantity.text.trim()) ?? 0,
+          'brand': _brand.text.trim(),
+          'partNumber': _partNumber.text.trim(),
+          'compatibleMake': _make.text.trim(),
+          'compatibleModel': _model.text.trim(),
+          'images': images.map((i) => i.toMap()).toList(),
+        });
       } else {
         listingId = await service.createDraft(
           storeId: widget.storeId,
-          name: fields['name'] as String,
-          categoryId: _category,
+          // The id the photos were already uploaded under.
+          listingId: _listingId,
+          name: _name.text.trim(),
+          categoryId: _category!,
           condition: _condition,
           priceKobo: priceKobo,
-          quantity: fields['quantity'] as int,
-          description: fields['description'] as String,
-          brand: fields['brand'] as String,
-          partNumber: fields['partNumber'] as String,
-          compatibleMake: fields['compatibleMake'] as String,
-          compatibleModel: fields['compatibleModel'] as String,
-          images: _images,
+          quantity: int.tryParse(_quantity.text.trim()) ?? 0,
+          description: _description.text.trim(),
+          brand: _brand.text.trim(),
+          partNumber: _partNumber.text.trim(),
+          compatibleMake: _make.text.trim(),
+          compatibleModel: _model.text.trim(),
+          images: images,
         );
       }
 
       if (publish) await service.publish(listingId);
+
+      // The document now owns these objects; dispose must not delete them.
+      _saved = true;
 
       if (!mounted) return;
       messenger.showSnackBar(
@@ -215,18 +362,30 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
           ),
         ),
       );
-      navigator.pop();
+
+      if (widget.embedded) {
+        // Land on the tab that now holds the listing, with a fresh form behind.
+        resetListingFormAndGo(
+          ref,
+          ShellTab.listings,
+          listingsTab: publish ? ListingsTab.active : ListingsTab.draft,
+        );
+      } else {
+        Navigator.of(context).pop();
+      }
+      return;
     } on PublishRequiresConnection {
-      // The write is already queued locally, so nothing is lost — say so
-      // rather than leaving the dealer wondering.
+      // The write is already queued locally, so nothing is lost — say so rather
+      // than leaving the dealer wondering.
       if (mounted) setState(() => _error = PublishRequiresConnection.message);
     } on ListingLimitReached catch (e) {
       if (mounted) {
-        setState(() => _error = e.isFairUse
-            ? 'Fair-use limit reached (${e.limit} active listings). '
-                'Unpublish one to publish this.'
-            : 'Your free plan allows ${e.limit} active listings. '
-                'Saved as a draft — upgrade on the website to publish more.');
+        final store = ref.read(myStoreProvider).valueOrNull;
+        if (store != null) {
+          showListingLimitSheet(context, ref, store, e);
+        }
+        setState(() => _error = 'Saved as a draft — your plan allows ${e.limit} '
+            'active listings.');
       }
     } on StoreNotApproved catch (e) {
       if (mounted) setState(() => _error = e.message);
@@ -237,222 +396,341 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
     }
   }
 
+  // --- Build ---------------------------------------------------------------
+
   @override
   Widget build(BuildContext context) {
     final alreadyActive = widget.existing?.status == ListingStatus.active;
+    final body = _form(context, alreadyActive);
 
-    return Scaffold(
-      backgroundColor: NphColors.background,
-      appBar: AppBar(
-        title: Text(_isEdit ? 'Edit Listing' : 'Add New Listing'),
-        leading: NphIconButton(
-          icon: Icons.arrow_back,
-          tooltip: 'Back',
-          onPressed: () => Navigator.of(context).maybePop(),
+    if (widget.embedded) return body;
+
+    // Pushed edit route: leaving IS a pop, so PopScope is the right guard here.
+    return PopScope(
+      canPop: !_hasContent || _busy,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final navigator = Navigator.of(context);
+        // Captured before the await: using `context` afterwards is guarded by
+        // the State's `mounted`, which says nothing about whether this
+        // particular BuildContext is still in the tree.
+        if (await _confirmDiscard()) navigator.pop();
+      },
+      child: Scaffold(
+        backgroundColor: NphColors.background,
+        appBar: AppBar(
+          title: Text(_isEdit ? 'Edit Listing' : 'Add New Listing'),
+          leading: NphIconButton(
+            icon: Icons.arrow_back,
+            tooltip: 'Back',
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+          shape: const Border(bottom: BorderSide(color: NphColors.border)),
         ),
-        shape: const Border(bottom: BorderSide(color: NphColors.border)),
+        body: SafeArea(child: body),
       ),
-      body: SafeArea(
-        child: Form(
-          key: _formKey,
-          child: ListView(
-            padding: const EdgeInsets.all(NphSpacing.appPage),
+    );
+  }
+
+  Future<bool> _confirmDiscard() async {
+    if (!_hasContent) return true;
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: NphColors.card,
+        shape: const RoundedRectangleBorder(borderRadius: NphRadius.cardBorder),
+        title: const Text('Discard changes?'),
+        content: const Text(
+          'You have unsaved changes. Save as a draft instead to keep your work.',
+          style: TextStyle(fontFamily: NphFonts.body, fontSize: 14, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            style: TextButton.styleFrom(foregroundColor: NphColors.mutedForeground),
+            child: const Text('Keep editing'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: NphColors.error),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+    return discard ?? false;
+  }
+
+  Widget _form(BuildContext context, bool alreadyActive) {
+    final categories = ref.watch(categoriesProvider);
+
+    return Form(
+      key: _formKey,
+      child: ListView(
+        controller: _scroll,
+        padding: const EdgeInsets.all(NphSpacing.appPage),
+        children: [
+          if (widget.embedded) ...[
+            Text(
+              _isEdit ? 'Edit Listing' : 'Add New Listing',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: NphSpacing.lg),
+          ],
+
+          _photos(),
+          const SizedBox(height: NphSpacing.xl),
+
+          NphField(
+            label: 'Part name',
+            child: TextFormField(
+              controller: _name,
+              textInputAction: TextInputAction.next,
+              textCapitalization: TextCapitalization.words,
+              maxLength: 140,
+              decoration: const InputDecoration(
+                hintText: 'e.g. Toyota Corolla Front Brake Pad',
+                counterText: '',
+              ),
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Part name is required' : null,
+            ),
+          ),
+
+          NphField(
+            label: 'Category',
+            child: categories.when(
+              loading: () => const _FieldPlaceholder(text: 'Loading categories…'),
+              error: (e, _) => _FieldPlaceholder(text: friendlyError(e), isError: true),
+              data: (list) => DropdownButtonFormField<String>(
+                initialValue: _category,
+                isExpanded: true,
+                hint: const Text('Select category'),
+                items: [
+                  for (final c in list) DropdownMenuItem(value: c.id, child: Text(c.name)),
+                ],
+                onChanged: (v) {
+                  setState(() => _category = v);
+                  _markDirty();
+                },
+                // Required, and deliberately not defaulted. The old default of
+                // 'engine' made mis-categorising the path of least resistance.
+                validator: (v) => v == null ? 'Choose a category' : null,
+              ),
+            ),
+          ),
+
+          NphField(
+            label: 'Condition',
+            child: NphSegmented(
+              options: const ['New', 'Used'],
+              value: _condition == 'used' ? 'Used' : 'New',
+              onChanged: (v) {
+                setState(() => _condition = v.toLowerCase());
+                _markDirty();
+              },
+            ),
+          ),
+
+          NphField(
+            label: 'Price',
+            child: TextFormField(
+              controller: _price,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              textInputAction: TextInputAction.next,
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+              decoration: const InputDecoration(
+                hintText: '0',
+                prefixText: '₦ ',
+                prefixStyle: TextStyle(
+                  fontFamily: NphFonts.body,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: NphColors.foreground,
+                ),
+              ),
+              validator: (v) {
+                final parsed = double.tryParse((v ?? '').trim());
+                if (parsed == null) return 'Enter a price';
+                if (parsed <= 0) return 'Price must be more than ₦0';
+                if (parsed > 10000000) return 'Price looks too high — check the amount';
+                return null;
+              },
+            ),
+          ),
+
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _photos(),
-              const SizedBox(height: NphSpacing.xl),
-              NphField(
-                label: 'Part name',
-                child: TextFormField(
-                  controller: _name,
-                  textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(
-                    hintText: 'e.g. Toyota Corolla Front Brake Pad',
-                  ),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Part name is required' : null,
-                ),
-              ),
-              NphField(
-                label: 'Category',
-                child: DropdownButtonFormField<String>(
-                  initialValue: _category,
-                  isExpanded: true,
-                  items: _categories
-                      .map((c) => DropdownMenuItem(
-                            value: c,
-                            child: Text('${c[0].toUpperCase()}${c.substring(1)}'),
-                          ))
-                      .toList(),
-                  onChanged: (v) => setState(() => _category = v ?? 'other'),
-                ),
-              ),
-              NphField(
-                label: 'Condition',
-                child: NphSegmented(
-                  options: const ['New', 'Used'],
-                  value: _condition == 'used' ? 'Used' : 'New',
-                  onChanged: (v) => setState(() => _condition = v.toLowerCase()),
-                ),
-              ),
-              NphField(
-                label: 'Price',
-                child: TextFormField(
-                  controller: _price,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(
-                    hintText: '0',
-                    prefixText: '₦ ',
-                    prefixStyle: TextStyle(
-                      fontFamily: NphFonts.body,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: NphColors.mutedForeground,
-                    ),
-                  ),
-                  validator: (v) {
-                    final parsed = double.tryParse((v ?? '').trim());
-                    if (parsed == null) return 'Enter a price';
-                    if (parsed < 0) return 'Price cannot be negative';
-                    return null;
-                  },
-                ),
-              ),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: NphField(
-                      label: 'Vehicle make',
-                      child: TextFormField(
-                        controller: _make,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(hintText: 'Toyota'),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: NphSpacing.md),
-                  Expanded(
-                    child: NphField(
-                      label: 'Model / year',
-                      child: TextFormField(
-                        controller: _model,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(hintText: 'Corolla 2017'),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: NphField(
-                      label: 'Brand',
-                      optional: true,
-                      child: TextFormField(
-                        controller: _brand,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(hintText: 'Bosch'),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: NphSpacing.md),
-                  Expanded(
-                    child: NphField(
-                      label: 'Quantity',
-                      child: TextFormField(
-                        controller: _quantity,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(hintText: '1'),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              NphField(
-                label: 'Part number',
-                optional: true,
-                child: TextFormField(
-                  controller: _partNumber,
-                  textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(hintText: 'TCBP-2017-F'),
-                ),
-              ),
-              NphField(
-                label: 'Description',
-                optional: true,
-                child: TextFormField(
-                  controller: _description,
-                  maxLines: 4,
-                  maxLength: 2000,
-                  decoration: const InputDecoration(
-                    hintText: 'Describe the part, its fitment and condition.',
-                    counterText: '',
+              Expanded(
+                child: NphField(
+                  label: 'Vehicle make',
+                  child: TextFormField(
+                    controller: _make,
+                    textInputAction: TextInputAction.next,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(hintText: 'Toyota'),
                   ),
                 ),
               ),
-
-              if (_offline && !alreadyActive) ...[
-                const NphBanner(
-                  message: 'Publishing needs a connection — the listing limit can only be '
-                      'checked by the server. You can still save a draft.',
-                  tone: NphTone.neutral,
-                  icon: Icons.cloud_off_outlined,
+              const SizedBox(width: NphSpacing.md),
+              Expanded(
+                child: NphField(
+                  label: 'Vehicle model',
+                  child: TextFormField(
+                    controller: _model,
+                    textInputAction: TextInputAction.next,
+                    textCapitalization: TextCapitalization.words,
+                    // Model only. The old "Corolla 2017" placeholder invited
+                    // dealers to type a year into a field the contract has no
+                    // year in, so the value ended up embedded in the model
+                    // string and unusable as a filter.
+                    decoration: const InputDecoration(hintText: 'Corolla'),
+                  ),
                 ),
-                const SizedBox(height: NphSpacing.md),
-              ],
-
-              // Above the buttons. Below, it scrolled off the bottom and hid
-              // the message explaining why a part saved as a draft.
-              if (_error != null) ...[
-                NphNotice(message: _error!),
-                const SizedBox(height: NphSpacing.md),
-              ],
-
-              if (alreadyActive)
-                FilledButton(
-                  onPressed: _busy ? null : () => _save(publish: false),
-                  child: const Text('Save changes'),
-                )
-              else ...[
-                FilledButton(
-                  onPressed: (_busy || _offline) ? null : () => _save(publish: true),
-                  child: Text(_isEdit ? 'Save & publish' : 'Publish listing'),
-                ),
-                const SizedBox(height: NphSpacing.sm),
-                OutlinedButton(
-                  onPressed: _busy ? null : () => _save(publish: false),
-                  child: Text(_isEdit ? 'Save changes' : 'Save as draft'),
-                ),
-              ],
-              const SizedBox(height: NphSpacing.xl),
+              ),
             ],
           ),
-        ),
+
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: NphField(
+                  label: 'Brand',
+                  optional: true,
+                  child: TextFormField(
+                    controller: _brand,
+                    textInputAction: TextInputAction.next,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(hintText: 'Bosch'),
+                  ),
+                ),
+              ),
+              const SizedBox(width: NphSpacing.md),
+              Expanded(
+                child: NphField(
+                  label: 'Quantity',
+                  child: TextFormField(
+                    controller: _quantity,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(hintText: '1'),
+                    validator: (v) {
+                      final n = int.tryParse((v ?? '').trim());
+                      if (n == null) return 'Enter a quantity';
+                      if (n <= 0) return 'Must be at least 1';
+                      return null;
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          NphField(
+            label: 'Part number / SKU',
+            optional: true,
+            child: TextFormField(
+              controller: _partNumber,
+              textInputAction: TextInputAction.next,
+              textCapitalization: TextCapitalization.characters,
+              decoration: const InputDecoration(hintText: 'TCBP-2017-F'),
+            ),
+          ),
+
+          NphField(
+            label: 'Description',
+            optional: true,
+            child: TextFormField(
+              controller: _description,
+              maxLines: 4,
+              maxLength: 2000,
+              buildCounter: (_, {required currentLength, required isFocused, maxLength}) =>
+                  Text(
+                '$currentLength / $maxLength',
+                style: const TextStyle(
+                  fontFamily: NphFonts.body,
+                  fontSize: 11,
+                  color: NphColors.mutedForeground,
+                ),
+              ),
+              decoration: const InputDecoration(
+                hintText: 'Describe the part, its fitment and condition.',
+              ),
+            ),
+          ),
+
+          const NphBanner(
+            message: 'Buyers see your store address as the pickup location.',
+            tone: NphTone.neutral,
+            icon: Icons.location_on_outlined,
+          ),
+          const SizedBox(height: NphSpacing.lg),
+
+          if (_uploading) ...[
+            const NphBanner(
+              message: 'Photos are still uploading. Publishing unlocks when they finish.',
+              tone: NphTone.warning,
+              icon: Icons.cloud_upload_outlined,
+            ),
+            const SizedBox(height: NphSpacing.md),
+          ] else if (_offline && !alreadyActive) ...[
+            const NphBanner(
+              message: 'Publishing needs a connection — the listing limit can only be '
+                  'checked by the server. You can still save a draft.',
+              tone: NphTone.neutral,
+              icon: Icons.cloud_off_outlined,
+            ),
+            const SizedBox(height: NphSpacing.md),
+          ],
+
+          // Above the buttons. Below, it scrolled off the bottom and hid the
+          // message explaining why a part saved as a draft.
+          if (_error != null) ...[
+            NphNotice(message: _error!),
+            const SizedBox(height: NphSpacing.md),
+          ],
+
+          if (alreadyActive)
+            FilledButton(
+              onPressed: _busy ? null : () => _save(publish: false),
+              child: _busy ? const _ButtonSpinner() : const Text('Save changes'),
+            )
+          else ...[
+            FilledButton(
+              onPressed: (_busy || _offline || _uploading) ? null : () => _save(publish: true),
+              child: _busy ? const _ButtonSpinner() : const Text('Publish listing'),
+            ),
+            const SizedBox(height: NphSpacing.sm),
+            OutlinedButton(
+              onPressed: _busy ? null : () => _save(publish: false),
+              child: Text(_isEdit ? 'Save changes' : 'Save as draft'),
+            ),
+          ],
+          const SizedBox(height: NphSpacing.xxxl),
+        ],
       ),
     );
   }
 
   Widget _photos() {
-    final canAdd = _images.length < ImageUploadService.maxImages;
+    final canAdd = _slots.length < ImageUploadService.maxImages;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        NphFieldLabel('Photos (${_images.length}/${ImageUploadService.maxImages})'),
+        NphFieldLabel('Photos (${_slots.length}/${ImageUploadService.maxImages})'),
         SizedBox(
-          height: 104,
+          height: 108,
           child: ListView(
             scrollDirection: Axis.horizontal,
             children: [
-              for (var i = 0; i < _images.length; i++)
+              for (var i = 0; i < _slots.length; i++)
                 Padding(
                   padding: const EdgeInsets.only(right: NphSpacing.sm),
-                  child: _thumb(i),
+                  child: _slotTile(i),
                 ),
               if (canAdd) ...[
                 _addTile(
@@ -470,42 +748,119 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
             ],
           ),
         ),
-        if (_uploadProgress != null)
-          Padding(
-            padding: const EdgeInsets.only(top: NphSpacing.sm),
-            child: NphProgressBar(value: _uploadProgress!, height: 4),
+        if (_slots.length > 1)
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: Text(
+              'Tap a photo to make it the main image buyers see first.',
+              style: TextStyle(
+                fontFamily: NphFonts.body,
+                fontSize: 11,
+                color: NphColors.mutedForeground,
+              ),
+            ),
           ),
       ],
     );
   }
 
-  Widget _thumb(int index) {
-    final image = _images[index];
+  Widget _slotTile(int index) {
+    final slot = _slots[index];
+    final isMain = index == 0;
+
     return SizedBox(
       width: 96,
       height: 96,
       child: Stack(
         children: [
-          ClipRRect(
-            borderRadius: NphRadius.fieldBorder,
-            child: SizedBox(
-              width: 96,
-              height: 96,
-              child: image.url.startsWith('http')
-                  ? CachedNetworkImage(
-                      imageUrl: image.url,
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) => Container(color: NphColors.muted),
-                      errorWidget: (_, __, ___) => Container(color: NphColors.muted),
-                    )
-                  : Image.file(File(image.url), fit: BoxFit.cover),
+          GestureDetector(
+            onTap: slot.isDone ? () => _makeMain(index) : null,
+            child: ClipRRect(
+              borderRadius: NphRadius.fieldBorder,
+              child: SizedBox(
+                width: 96,
+                height: 96,
+                child: _slotImage(slot),
+              ),
             ),
           ),
+          if (slot.isUploading)
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  borderRadius: NphRadius.fieldBorder,
+                ),
+                child: Center(
+                  child: SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      value: slot.progress,
+                      strokeWidth: 2.5,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (slot.isFailed)
+            Positioned.fill(
+              child: GestureDetector(
+                // Fire-and-forget: _upload owns its own error handling and
+                // setState, so awaiting here would only widen the callback's
+                // signature for no benefit.
+                onTap: () => unawaited(_upload(slot)),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: NphColors.error.withValues(alpha: 0.80),
+                    borderRadius: NphRadius.fieldBorder,
+                  ),
+                  child: const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.refresh, size: 20, color: Colors.white),
+                      SizedBox(height: 2),
+                      Text(
+                        'Retry',
+                        style: TextStyle(
+                          fontFamily: NphFonts.body,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          if (isMain && slot.isDone)
+            Positioned(
+              left: 4,
+              bottom: 4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: const BoxDecoration(
+                  color: NphColors.orange,
+                  borderRadius: NphRadius.pillBorder,
+                ),
+                child: const Text(
+                  'Main',
+                  style: TextStyle(
+                    fontFamily: NphFonts.body,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
           Positioned(
             right: 4,
             top: 4,
             child: InkWell(
-              onTap: () => _removeImage(index),
+              onTap: () => _removeSlot(index),
               borderRadius: NphRadius.pillBorder,
               child: Container(
                 width: 24,
@@ -523,56 +878,112 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
     );
   }
 
-  /// `aspect-square rounded-xl border-2 border-dashed border-border bg-warm`.
+  Widget _slotImage(_Slot slot) {
+    final url = slot.uploaded?.displayUrl;
+    if (url != null && url.startsWith('http')) {
+      return CachedNetworkImage(
+        imageUrl: url,
+        fit: BoxFit.cover,
+        placeholder: (_, __) => Container(color: NphColors.muted),
+        errorWidget: (_, __, ___) => Container(color: NphColors.muted),
+      );
+    }
+    if (slot.local != null) {
+      return Image.file(
+        File(slot.local!.path),
+        fit: BoxFit.cover,
+        // Android can purge the camera/gallery cache entry out from under us
+        // between picking and rendering. Without this the decode throws and
+        // takes the form down; a muted tile keeps the slot — and its Retry —
+        // usable.
+        errorBuilder: (_, __, ___) => Container(color: NphColors.muted),
+      );
+    }
+    return Container(color: NphColors.muted);
+  }
+
+  /// `aspect-square rounded-xl border-2 border-dashed bg-warm`. Flutter has no
+  /// dashed border and a package for two tiles is not worth the dependency; a
+  /// solid 2 px border over the warm fill reads the same at this size.
   Widget _addTile({
     required IconData icon,
     required String label,
     required VoidCallback onTap,
   }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: NphRadius.fieldBorder,
-      child: DottedBorderBox(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 24, color: NphColors.orange),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: const TextStyle(
-                fontFamily: NphFonts.body,
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: NphColors.mutedForeground,
+    return Semantics(
+      button: true,
+      label: 'Add photo from $label',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: NphRadius.fieldBorder,
+        child: Container(
+          width: 96,
+          height: 96,
+          decoration: BoxDecoration(
+            color: NphColors.warm,
+            borderRadius: NphRadius.fieldBorder,
+            border: Border.all(color: NphColors.border, width: 2),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 24, color: NphColors.orange),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontFamily: NphFonts.body,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: NphColors.mutedForeground,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// Flutter has no dashed border, and pulling a package in for two tiles is not
-/// worth the dependency. A solid border at low opacity over the warm fill reads
-/// the same at this size.
-class DottedBorderBox extends StatelessWidget {
-  const DottedBorderBox({super.key, required this.child});
+class _ButtonSpinner extends StatelessWidget {
+  const _ButtonSpinner();
 
-  final Widget child;
+  @override
+  Widget build(BuildContext context) => const SizedBox(
+        height: 18,
+        width: 18,
+        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+      );
+}
+
+class _FieldPlaceholder extends StatelessWidget {
+  const _FieldPlaceholder({required this.text, this.isError = false});
+
+  final String text;
+  final bool isError;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 96,
-      height: 96,
+      height: NphSize.fieldHeight,
+      alignment: Alignment.centerLeft,
+      padding: const EdgeInsets.symmetric(horizontal: NphSpacing.md),
       decoration: BoxDecoration(
-        color: NphColors.warm,
+        color: NphColors.card,
         borderRadius: NphRadius.fieldBorder,
-        border: Border.all(color: NphColors.border, width: 2),
+        border: Border.all(color: isError ? NphColors.error : NphColors.border),
       ),
-      child: child,
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontFamily: NphFonts.body,
+          fontSize: 14,
+          color: isError ? NphColors.error : NphColors.mutedForeground,
+        ),
+      ),
     );
   }
 }

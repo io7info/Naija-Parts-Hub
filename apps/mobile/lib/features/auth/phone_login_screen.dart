@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -153,7 +154,12 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                     child: const Text('Register a New Store'),
                   ),
 
-                  if (Env.useEmulator) ...[
+                  // Both conditions, not just useEmulator. That flag now
+                  // defaults to false in release, but a stray
+                  // --dart-define on a release build would still surface
+                  // backend diagnostics to a dealer. kDebugMode cannot be
+                  // overridden from the command line.
+                  if (kDebugMode && Env.useEmulator) ...[
                     const SizedBox(height: NphSpacing.lg),
                     Text(
                       Env.describe,

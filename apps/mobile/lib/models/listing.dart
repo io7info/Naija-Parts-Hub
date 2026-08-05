@@ -1,4 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
+
+import '../core/env.dart';
 
 /// Dart mirror of `packages/contracts/src/listing.ts`.
 ///
@@ -38,6 +41,14 @@ class ListingImage {
   final int height;
   final int sizeBytes;
 
+  /// The address to actually load on this device.
+  ///
+  /// Against the Emulator Suite the stored URL names the host's loopback, which
+  /// resolves to the handset itself on an Android emulator. Resolved per client
+  /// rather than rewritten in Firestore, because the web app needs the original
+  /// form. See Env.resolveStorageUrl.
+  String get displayUrl => Env.resolveStorageUrl(url);
+
   Map<String, dynamic> toMap() => {
         'path': path,
         'url': url,
@@ -72,6 +83,9 @@ class Listing {
     required this.images,
     required this.status,
     required this.publiclyVisible,
+    this.updatedAt,
+    this.createdAt,
+    this.removed = false,
     this.hasPendingWrites = false,
   });
 
@@ -93,12 +107,38 @@ class Listing {
   final ListingStatus status;
   final bool publiclyVisible;
 
+  /// Null until the server acknowledges the write.
+  ///
+  /// `FieldValue.serverTimestamp()` resolves on the server, so a document read
+  /// from the local cache before it syncs genuinely has no timestamp. Callers
+  /// must treat null as "just now" rather than as "very old", or an offline
+  /// draft sorts to the bottom of a newest-first list the moment it is created.
+  final DateTime? updatedAt;
+  final DateTime? createdAt;
+
+  /// Set by an administrator (SOW §9). Independent of the dealer's own status:
+  /// a removed listing keeps whatever status it had, so the two must be
+  /// displayed separately rather than collapsed into one badge.
+  final bool removed;
+
   /// True while this document is a local-only write not yet acknowledged by
   /// the server. Comes from Firestore snapshot metadata and drives the sync
   /// indicator (SOW section 10, "visible sync status").
   final bool hasPendingWrites;
 
-  String get priceLabel => '₦${(priceKobo / 100).toStringAsFixed(0)}';
+  /// Grouped naira, e.g. 4500000 kobo -> "₦45,000".
+  ///
+  /// The approved design renders thousands separators throughout ("₦28,500"),
+  /// and at Nigerian parts prices an ungrouped "₦980000" is genuinely hard to
+  /// read at a glance — the digit count is what a buyer scans, not the value.
+  ///
+  /// Kobo are dropped rather than shown as ".00": every price in the seed data
+  /// and every price the listing form produces is a whole naira amount, so two
+  /// zero decimals on each card would be noise. Money is still stored and
+  /// compared as integer kobo; this is presentation only.
+  String get priceLabel => '₦${_naira.format(priceKobo / 100)}';
+
+  static final _naira = NumberFormat.decimalPattern('en_NG');
 
   /// The dealer-writable subset. Security rules reject anything else, so this
   /// is deliberately the only map the client ever sends.
@@ -137,7 +177,24 @@ class Listing {
           .toList(),
       status: ListingStatus.parse(d['status'] as String?),
       publiclyVisible: (d['publiclyVisible'] as bool?) ?? false,
+      updatedAt: (d['updatedAt'] as Timestamp?)?.toDate(),
+      createdAt: (d['createdAt'] as Timestamp?)?.toDate(),
+      removed: ((d['moderation'] as Map<String, dynamic>?)?['removed'] as bool?) ?? false,
       hasPendingWrites: doc.metadata.hasPendingWrites,
     );
   }
+
+  /// Newest-first ordering key.
+  ///
+  /// Falls back through updatedAt -> createdAt -> now. The final fallback is
+  /// what keeps an unsynced local write at the top of the list: its server
+  /// timestamps are still null, and treating null as epoch would bury a draft
+  /// the dealer created seconds ago beneath everything else.
+  DateTime get sortKey => updatedAt ?? createdAt ?? DateTime.now();
+
+  /// What the dealer should see as this listing's state.
+  ///
+  /// Admin removal outranks the dealer's own status: a listing they believe is
+  /// live is not, and saying "Active" would be a lie they would act on.
+  String get displayStatus => removed ? 'removed' : status.name;
 }

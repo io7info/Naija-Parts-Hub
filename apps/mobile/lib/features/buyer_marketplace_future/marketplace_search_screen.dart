@@ -9,10 +9,10 @@ import '../../core/errors.dart';
 import '../../design/components.dart';
 import '../../design/tokens.dart';
 import '../../models/store.dart';
-import '../../services/marketplace_service.dart';
+import 'marketplace_service.dart';
 import '../../widgets/listing_card.dart';
 
-/// Marketplace search (SOW §7) — by product name or part number.
+/// Marketplace search (SOW Â§7) — by product name or part number.
 ///
 /// Backed by `searchTokens`, the prefix-token array a Firestore trigger
 /// generates from name + brand + partNumber. That array is deliberately not

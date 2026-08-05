@@ -1,8 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/listing.dart';
-import 'store_service.dart';
+import '../../models/listing.dart';
+import '../../services/store_service.dart';
 
 /// Public marketplace reads for the in-app Home and Search tabs.
 ///
@@ -41,7 +41,7 @@ class MarketplaceService {
       .snapshots()
       .map((s) => s.docs.map(PublicListing.fromDoc).toList());
 
-  /// Prefix-token search over name, brand and part number (SOW §7).
+  /// Prefix-token search over name, brand and part number (SOW Â§7).
   ///
   /// `searchTokens` is generated server-side by a trigger, so a dealer cannot
   /// stuff it to surface for every term. Firestore caps `array-contains` at one

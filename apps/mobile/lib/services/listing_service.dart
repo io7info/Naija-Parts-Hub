@@ -66,6 +66,18 @@ class ListingService {
 
   CollectionReference<Map<String, dynamic>> get _col => _db.collection('listings');
 
+  /// Reserves a listing id before the document exists.
+  ///
+  /// `doc()` generates the id client-side, so photos can be uploaded to the
+  /// listing's *final* Storage path before anything is written to Firestore.
+  ///
+  /// The previous flow uploaded every new listing's photos to the literal path
+  /// `stores/{uid}/listings/drafts/`, shared by every draft that dealer ever
+  /// started. Two consequences: nothing tied an object back to a listing, and
+  /// `deleteListing`'s cleanup could only remove objects still referenced by a
+  /// saved document — so every abandoned form leaked its uploads permanently.
+  String newListingId() => _col.doc().id;
+
   Stream<List<Listing>> watchMine(String storeId) => _col
       .where('storeId', isEqualTo: storeId)
       .snapshots(includeMetadataChanges: true)
@@ -78,6 +90,9 @@ class ListingService {
   /// create, which is what stops a client publishing without the limit check.
   Future<String> createDraft({
     required String storeId,
+    /// Pass the id reserved by [newListingId] so the document lands where its
+    /// already-uploaded photos are. Omit only when there are no images.
+    String? listingId,
     required String name,
     required String categoryId,
     required String condition,
@@ -90,7 +105,7 @@ class ListingService {
     String compatibleModel = '',
     List<ListingImage> images = const [],
   }) async {
-    final doc = _col.doc();
+    final doc = listingId == null ? _col.doc() : _col.doc(listingId);
     final payload = <String, dynamic>{
       'storeId': storeId,
       'status': 'draft',

@@ -17,15 +17,26 @@ library;
 
 import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
 
 enum AppEnvironment { emulator, live }
 
 abstract final class Env {
-  /// Defaults to true so a fresh checkout runs fully offline against the
-  /// Local Emulator Suite with no credentials and no Firebase project.
+  /// Emulator in debug and profile; **never** by default in release.
+  ///
+  /// The default used to be an unconditional `true`, which meant
+  /// `flutter build apk --release` with no `--dart-define` produced a *release*
+  /// build wired to 10.0.2.2 — an app that shows emulator diagnostics, cannot
+  /// reach any backend on a real handset, and would have failed store review
+  /// while looking fine on the build machine. Nothing in the build would have
+  /// warned anyone.
+  ///
+  /// `kReleaseMode` is a compile-time constant (`dart.vm.product`), so this
+  /// stays a `const` and the emulator wiring is still tree-shaken out of
+  /// release binaries. An explicit `--dart-define` overrides either way, which
+  /// is what the two-direction switch test relies on.
   static const bool useEmulator =
-      bool.fromEnvironment('USE_FIREBASE_EMULATOR', defaultValue: true);
+      bool.fromEnvironment('USE_FIREBASE_EMULATOR', defaultValue: !kReleaseMode);
 
   static AppEnvironment get current =>
       useEmulator ? AppEnvironment.emulator : AppEnvironment.live;
@@ -84,12 +95,43 @@ abstract final class Env {
     defaultValue: 'https://naijapartshub.ng',
   );
 
+  /// Support line, digits only for `wa.me`.
+  ///
+  /// A dart-define rather than a literal: the client's support number is not
+  /// settled, and it appears on four screens. PENDING client confirmation —
+  /// the current value is a placeholder and must be replaced before release.
+  static const String supportWhatsapp =
+      String.fromEnvironment('SUPPORT_WHATSAPP', defaultValue: '2348031234567');
+
   /// Shown when a free store hits the 10-listing limit. Web-only by design —
   /// selling an in-app upgrade would engage App Store Guideline 3.1.1.
   static const String upgradeUrl = String.fromEnvironment(
     'UPGRADE_URL',
     defaultValue: '$marketplaceOrigin/plans',
   );
+
+  /// Rewrites a Storage download URL so it is reachable from *this* device.
+  ///
+  /// The Storage emulator mints absolute URLs containing whatever host the
+  /// seeder or uploader used — typically `http://127.0.0.1:9199/...`. Those are
+  /// correct on the machine running the emulators, and meaningless on an
+  /// Android emulator, where 127.0.0.1 is the handset itself: nothing is
+  /// listening, so every image silently fails to load while the surrounding
+  /// document renders perfectly.
+  ///
+  /// The stored URL is deliberately left alone. It is shared with the Next.js
+  /// site, which runs on the host and needs the loopback form — so the address
+  /// is resolved per client at render time rather than baked into the document.
+  ///
+  /// A no-op against a live project, where URLs point at
+  /// firebasestorage.googleapis.com and must not be touched.
+  static String resolveStorageUrl(String url) {
+    if (!useEmulator || url.isEmpty) return url;
+    return url.replaceFirst(
+      RegExp(r'^https?://(127\.0\.0\.1|localhost)'),
+      'http://$emulatorHost',
+    );
+  }
 
   static String get describe =>
       useEmulator ? 'Emulator ($emulatorHost) · $demoProjectId' : 'Live Firebase project';

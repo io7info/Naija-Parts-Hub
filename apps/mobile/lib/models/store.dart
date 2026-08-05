@@ -30,6 +30,13 @@ class Subscription {
 
   bool get isPaid => plan != 'free' && (status == 'active' || status == 'grace');
 
+  /// Lapsed but still honoured — listings stay live through the grace window.
+  bool get inGrace => plan != 'free' && status == 'grace';
+
+  /// Lapsed and no longer honoured. The backend has dropped this store back to
+  /// the free allowance, so active listings above 10 have been unpublished.
+  bool get hasExpired => plan != 'free' && status == 'expired';
+
   factory Subscription.fromMap(Map<String, dynamic>? m) => Subscription(
         plan: (m?['plan'] as String?) ?? 'free',
         status: (m?['status'] as String?) ?? 'none',

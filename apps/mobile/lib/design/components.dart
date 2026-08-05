@@ -16,7 +16,12 @@ enum NphIconTileSize {
   /// `size-9 rounded-xl` + `size-4` icon — dashboard stat cards.
   stat,
 
-  /// `size-11 rounded-xl` + `size-5` icon — category cards.
+  /// Category cards.
+  ///
+  /// Enlarged past the design's `size-11` + `size-5` (44/20) on client
+  /// direction: at three columns the 20 px glyph read as a speck in a tall
+  /// card, and the icon is the only thing distinguishing one category from
+  /// another at a glance.
   category,
 
   /// `size-16 rounded-full` + `size-8` icon — success confirmations.
@@ -44,7 +49,7 @@ class NphIconTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final (box, glyph, radius) = switch (size) {
       NphIconTileSize.stat => (36.0, 16.0, NphRadius.xl),
-      NphIconTileSize.category => (44.0, 20.0, NphRadius.xl),
+      NphIconTileSize.category => (58.0, 30.0, NphRadius.xxl),
       NphIconTileSize.success => (64.0, 32.0, NphRadius.pill),
       NphIconTileSize.hero => (96.0, 44.0, 35.0),
     };
@@ -153,13 +158,22 @@ class NphStatusBadge extends StatelessWidget {
             Icon(icon, size: 12, color: c.fg),
             const SizedBox(width: 3),
           ],
-          Text(
-            label,
-            style: TextStyle(
-              fontFamily: NphFonts.body,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: c.fg,
+          // Flexible, because mainAxisSize.min does not mean "fits": the Row
+          // still asks the Text for its natural width, and a long label such as
+          // "Verified dealer" overflowed the identity card by 14 px on a 320 dp
+          // handset. Ellipsis is the right degradation — the tone colour still
+          // carries the meaning.
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: NphFonts.body,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: c.fg,
+              ),
             ),
           ),
         ],
@@ -190,13 +204,17 @@ class NphVerifiedBadge extends StatelessWidget {
         children: [
           Icon(Icons.verified_outlined, size: compact ? 12 : 14, color: NphColors.success),
           const SizedBox(width: 3),
-          Text(
-            'Verified',
-            style: TextStyle(
-              fontFamily: NphFonts.body,
-              fontSize: compact ? 11 : 12,
-              fontWeight: FontWeight.w600,
-              color: NphColors.success,
+          Flexible(
+            child: Text(
+              'Verified',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: NphFonts.body,
+                fontSize: compact ? 11 : 12,
+                fontWeight: FontWeight.w600,
+                color: NphColors.success,
+              ),
             ),
           ),
         ],
@@ -340,26 +358,38 @@ class NphFieldLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Flexible + ellipsis, not bare Text. These labels sit in half-width
+    // columns ("Vehicle make" / "Vehicle model"), and a bare Text in a Row has
+    // no upper bound — "Part number / SKU (optional)" overflowed by 39 px on a
+    // 400 dp handset, and would overflow far worse at large text scale.
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         children: [
-          Text(
-            text,
-            style: const TextStyle(
-              fontFamily: NphFonts.body,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: NphColors.foreground,
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontFamily: NphFonts.body,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: NphColors.foreground,
+              ),
             ),
           ),
           if (optional)
-            const Text(
-              ' (optional)',
-              style: TextStyle(
-                fontFamily: NphFonts.body,
-                fontSize: 13,
-                color: NphColors.mutedForeground,
+            const Flexible(
+              child: Text(
+                ' (optional)',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: NphFonts.body,
+                  fontSize: 13,
+                  color: NphColors.mutedForeground,
+                ),
               ),
             ),
         ],
@@ -819,6 +849,8 @@ class NphSettingsRow extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontFamily: NphFonts.body,
                   fontSize: 14,
@@ -827,15 +859,25 @@ class NphSettingsRow extends StatelessWidget {
                 ),
               ),
             ),
+            // Flexible, and capped at roughly half the row. Values here are
+            // free text — a store address or a full name — and a bare Text in a
+            // Row is unbounded, so "50 Ladipo Market Road, Mushin, Lagos"
+            // overflowed by 55 px. Ellipsis truncates the value rather than the
+            // label, because the label is what makes the row scannable.
             if (value != null)
-              Padding(
-                padding: const EdgeInsets.only(right: NphSpacing.sm),
-                child: Text(
-                  value!,
-                  style: const TextStyle(
-                    fontFamily: NphFonts.body,
-                    fontSize: 13,
-                    color: NphColors.mutedForeground,
+              Flexible(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: NphSpacing.sm, right: NphSpacing.sm),
+                  child: Text(
+                    value!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      fontFamily: NphFonts.body,
+                      fontSize: 13,
+                      color: NphColors.mutedForeground,
+                    ),
                   ),
                 ),
               ),
@@ -898,11 +940,43 @@ class NphEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Scrollable, not a bare Center.
+    //
+    // Empty states sit inside panes of fixed height — a TabBarView beneath a
+    // header and above the nav bar. On a 320 dp handset that leaves under
+    // 280 dp, and the icon, title, wrapped message and action button together
+    // overflowed it by 155 px. A vertical overflow leaves the subtree
+    // un-laid-out, which breaks hit testing for the entire screen, so this is
+    // not a cosmetic concern.
+    //
+    // The ConstrainedBox keeps the content vertically centred while it fits,
+    // and lets it scroll once it does not — which is also what saves this at
+    // 2.0x text scale.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Unbounded height means this is inside a scrollable already — the
+        // dashboard renders an empty state as one item in a ListView. Wrapping
+        // it in a second scroll view there would ask a ConstrainedBox for an
+        // infinite minHeight, which is not a layout so much as a hang.
+        if (!constraints.hasBoundedHeight) return _content(context);
+
+        return SingleChildScrollView(
+          physics: const ClampingScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: _content(context),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _content(BuildContext context) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: NphSpacing.xxl,
-          vertical: 48,
+          vertical: NphSpacing.xxl,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -918,7 +992,11 @@ class NphEmptyState extends StatelessWidget {
               child: Icon(icon, size: 28, color: NphColors.mutedForeground),
             ),
             const SizedBox(height: NphSpacing.lg),
-            Text(title, style: Theme.of(context).textTheme.titleLarge, textAlign: TextAlign.center),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleLarge,
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: NphSpacing.xs),
             Text(
               message,

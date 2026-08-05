@@ -40,6 +40,63 @@ void main() {
     });
   });
 
+  group('storage URL resolution', () {
+    // The Storage emulator mints absolute URLs naming whatever host uploaded
+    // the object — usually the seeder's 127.0.0.1. That address means "this
+    // handset" on an Android emulator, so images silently fail to load while
+    // the surrounding document renders perfectly. Nothing errors; the picture
+    // is simply never there, which is why this is worth pinning down.
+    const seeded =
+        'http://127.0.0.1:9199/v0/b/demo-naija-parts-hub.appspot.com/o/'
+        'stores%2Fseed-ladipo-auto%2Flistings%2Fx%2Fseed-1.jpg?alt=media&token=abc';
+
+    test('emulator build retargets loopback at the host, preserving the rest', () {
+      if (!Env.useEmulator) return;
+
+      final resolved = Env.resolveStorageUrl(seeded);
+
+      expect(resolved, startsWith('http://${Env.emulatorHost}:9199/'));
+      // Port, object path and the download token must survive untouched — the
+      // token is what makes the object readable at all.
+      expect(resolved, contains(':9199/v0/b/demo-naija-parts-hub.appspot.com/o/'));
+      expect(resolved, endsWith('?alt=media&token=abc'));
+      expect(resolved, isNot(contains('127.0.0.1')));
+    });
+
+    test('only the host is rewritten, never a matching substring elsewhere', () {
+      if (!Env.useEmulator) return;
+
+      // A bare replace would corrupt this: the loopback address also appears
+      // inside the query string, where it is data rather than a destination.
+      const tricky = 'http://localhost:9199/o/file.jpg?from=127.0.0.1';
+      final resolved = Env.resolveStorageUrl(tricky);
+
+      expect(resolved, startsWith('http://${Env.emulatorHost}:9199/'));
+      expect(resolved, endsWith('?from=127.0.0.1'));
+    });
+
+    test('leaves a live Google Storage URL alone', () {
+      const live =
+          'https://firebasestorage.googleapis.com/v0/b/naijapartshub.firebasestorage.app/'
+          'o/stores%2Fabc%2Fx.jpg?alt=media&token=def';
+
+      // Must hold in BOTH builds: rewriting a production URL would break every
+      // image for every real dealer.
+      expect(Env.resolveStorageUrl(live), live);
+    });
+
+    test('live build rewrites nothing at all', () {
+      if (Env.useEmulator) return;
+
+      expect(Env.resolveStorageUrl(seeded), seeded);
+    });
+
+    test('an empty url stays empty rather than becoming a host', () {
+      // Listings legitimately have no photo while a dealer is still drafting.
+      expect(Env.resolveStorageUrl(''), '');
+    });
+  });
+
   group('generated Firebase options', () {
     test('both platforms point at the live project', () {
       expect(DefaultFirebaseOptions.android.projectId, 'naijapartshub');
