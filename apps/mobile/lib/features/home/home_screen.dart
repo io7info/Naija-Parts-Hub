@@ -127,7 +127,12 @@ class HomeScreen extends ConsumerWidget {
       physics: const NeverScrollableScrollPhysics(),
       mainAxisSpacing: NphSpacing.md,
       crossAxisSpacing: NphSpacing.md,
-      childAspectRatio: 0.95,
+      // Loosened from 0.95 to clear the enlarged icon tile. At three columns a
+      // card is ~118 dp wide, and 58 tile + 8 gap + two label lines + padding
+      // needs ~125 dp of height — "Heavy Equipment" and "Motorcycle Parts" both
+      // wrap, so the two-line case is the one that has to fit, not the one-line
+      // case.
+      childAspectRatio: 0.86,
       children: [
         for (final (label, icon, _) in _categories)
           NphCard(
@@ -356,40 +361,68 @@ class _FeaturedCarouselState extends State<_FeaturedCarousel> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        SizedBox(
-          height: 300,
-          child: PageView.builder(
+    return SizedBox(
+      height: 300,
+      child: Stack(
+        children: [
+          PageView.builder(
             controller: _controller,
             onPageChanged: (i) => setState(() => _page = i),
             itemCount: widget.items.length,
             itemBuilder: (_, i) => _slide(widget.items[i]),
           ),
-        ),
-        const SizedBox(height: NphSpacing.md),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            for (var i = 0; i < widget.items.length; i++)
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                margin: const EdgeInsets.symmetric(horizontal: 3),
-                width: i == _page ? 20 : 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: i == _page ? NphColors.orange : NphColors.border,
-                  borderRadius: NphRadius.pillBorder,
-                ),
-              ),
-          ],
-        ),
-      ],
+          // Dots sit ON the image rather than in a strip beneath it. The
+          // approved design places them below, but that leaves a band of white
+          // between the hero and Popular Categories which reads as a gap rather
+          // than as part of the hero.
+          //
+          // Tappable, not decorative: each dot jumps to its slide, so a dealer
+          // can reach the fourth item without swiping three times.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: NphSpacing.md,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                for (var i = 0; i < widget.items.length; i++)
+                  GestureDetector(
+                    onTap: () => _controller.animateToPage(
+                      i,
+                      duration: const Duration(milliseconds: 260),
+                      curve: Curves.easeOut,
+                    ),
+                    // Transparent padding widens the 6 px dot to a real tap
+                    // target without changing how it looks.
+                    behavior: HitTestBehavior.opaque,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 8),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        width: i == _page ? 20 : 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          // Inactive dots are white-on-scrim, not the light
+                          // border grey — that colour is invisible against a
+                          // photograph.
+                          color: i == _page
+                              ? NphColors.orange
+                              : Colors.white.withValues(alpha: 0.45),
+                          borderRadius: NphRadius.pillBorder,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _slide(PublicListing item) {
-    final url = item.listing.images.isEmpty ? '' : item.listing.images.first.url;
+    final url = item.listing.images.isEmpty ? '' : item.listing.images.first.displayUrl;
 
     return Stack(
       fit: StackFit.expand,
@@ -432,7 +465,8 @@ class _FeaturedCarouselState extends State<_FeaturedCarousel> {
         Positioned(
           left: NphSpacing.lg,
           right: NphSpacing.lg,
-          bottom: NphSpacing.lg,
+          // Clears the pagination dots, which now overlay the image bottom.
+          bottom: 38,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,

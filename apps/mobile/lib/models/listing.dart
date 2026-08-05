@@ -1,4 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
+
+import '../core/env.dart';
 
 /// Dart mirror of `packages/contracts/src/listing.ts`.
 ///
@@ -37,6 +40,14 @@ class ListingImage {
   final int width;
   final int height;
   final int sizeBytes;
+
+  /// The address to actually load on this device.
+  ///
+  /// Against the Emulator Suite the stored URL names the host's loopback, which
+  /// resolves to the handset itself on an Android emulator. Resolved per client
+  /// rather than rewritten in Firestore, because the web app needs the original
+  /// form. See Env.resolveStorageUrl.
+  String get displayUrl => Env.resolveStorageUrl(url);
 
   Map<String, dynamic> toMap() => {
         'path': path,
@@ -98,7 +109,19 @@ class Listing {
   /// indicator (SOW section 10, "visible sync status").
   final bool hasPendingWrites;
 
-  String get priceLabel => '₦${(priceKobo / 100).toStringAsFixed(0)}';
+  /// Grouped naira, e.g. 4500000 kobo -> "₦45,000".
+  ///
+  /// The approved design renders thousands separators throughout ("₦28,500"),
+  /// and at Nigerian parts prices an ungrouped "₦980000" is genuinely hard to
+  /// read at a glance — the digit count is what a buyer scans, not the value.
+  ///
+  /// Kobo are dropped rather than shown as ".00": every price in the seed data
+  /// and every price the listing form produces is a whole naira amount, so two
+  /// zero decimals on each card would be noise. Money is still stored and
+  /// compared as integer kobo; this is presentation only.
+  String get priceLabel => '₦${_naira.format(priceKobo / 100)}';
+
+  static final _naira = NumberFormat.decimalPattern('en_NG');
 
   /// The dealer-writable subset. Security rules reject anything else, so this
   /// is deliberately the only map the client ever sends.

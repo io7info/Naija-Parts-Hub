@@ -493,7 +493,7 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
               height: 96,
               child: image.url.startsWith('http')
                   ? CachedNetworkImage(
-                      imageUrl: image.url,
+                      imageUrl: image.displayUrl,
                       fit: BoxFit.cover,
                       placeholder: (_, __) => Container(color: NphColors.muted),
                       errorWidget: (_, __, ___) => Container(color: NphColors.muted),

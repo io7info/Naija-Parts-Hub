@@ -91,6 +91,29 @@ abstract final class Env {
     defaultValue: '$marketplaceOrigin/plans',
   );
 
+  /// Rewrites a Storage download URL so it is reachable from *this* device.
+  ///
+  /// The Storage emulator mints absolute URLs containing whatever host the
+  /// seeder or uploader used — typically `http://127.0.0.1:9199/...`. Those are
+  /// correct on the machine running the emulators, and meaningless on an
+  /// Android emulator, where 127.0.0.1 is the handset itself: nothing is
+  /// listening, so every image silently fails to load while the surrounding
+  /// document renders perfectly.
+  ///
+  /// The stored URL is deliberately left alone. It is shared with the Next.js
+  /// site, which runs on the host and needs the loopback form — so the address
+  /// is resolved per client at render time rather than baked into the document.
+  ///
+  /// A no-op against a live project, where URLs point at
+  /// firebasestorage.googleapis.com and must not be touched.
+  static String resolveStorageUrl(String url) {
+    if (!useEmulator || url.isEmpty) return url;
+    return url.replaceFirst(
+      RegExp(r'^https?://(127\.0\.0\.1|localhost)'),
+      'http://$emulatorHost',
+    );
+  }
+
   static String get describe =>
       useEmulator ? 'Emulator ($emulatorHost) · $demoProjectId' : 'Live Firebase project';
 }

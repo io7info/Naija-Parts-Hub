@@ -100,7 +100,7 @@ class NphListingListCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _Thumb(
-            url: listing.images.isEmpty ? '' : listing.images.first.url,
+            url: listing.images.isEmpty ? '' : listing.images.first.displayUrl,
             size: 96,
             condition: listing.condition,
           ),
@@ -231,7 +231,7 @@ class NphListingRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _Thumb(url: listing.images.isEmpty ? '' : listing.images.first.url, size: 80),
+          _Thumb(url: listing.images.isEmpty ? '' : listing.images.first.displayUrl, size: 80),
           const SizedBox(width: NphSpacing.md),
           Expanded(
             child: Column(

@@ -16,7 +16,12 @@ enum NphIconTileSize {
   /// `size-9 rounded-xl` + `size-4` icon — dashboard stat cards.
   stat,
 
-  /// `size-11 rounded-xl` + `size-5` icon — category cards.
+  /// Category cards.
+  ///
+  /// Enlarged past the design's `size-11` + `size-5` (44/20) on client
+  /// direction: at three columns the 20 px glyph read as a speck in a tall
+  /// card, and the icon is the only thing distinguishing one category from
+  /// another at a glance.
   category,
 
   /// `size-16 rounded-full` + `size-8` icon — success confirmations.
@@ -44,7 +49,7 @@ class NphIconTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final (box, glyph, radius) = switch (size) {
       NphIconTileSize.stat => (36.0, 16.0, NphRadius.xl),
-      NphIconTileSize.category => (44.0, 20.0, NphRadius.xl),
+      NphIconTileSize.category => (58.0, 30.0, NphRadius.xxl),
       NphIconTileSize.success => (64.0, 32.0, NphRadius.pill),
       NphIconTileSize.hero => (96.0, 44.0, 35.0),
     };
