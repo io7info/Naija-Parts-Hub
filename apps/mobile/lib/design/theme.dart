@@ -130,6 +130,16 @@ ButtonStyle _buttonStyle({
       }),
       overlayColor: const WidgetStatePropertyAll(Colors.transparent),
       elevation: const WidgetStatePropertyAll(0),
+      // Size.fromHeight leaves width at double.infinity, which is the standard
+      // idiom for "fill the parent" and is what the design wants for primary
+      // CTAs — they are always full-width blocks.
+      //
+      // The constraint that comes with it: a button styled this way must never
+      // be a bare child of a Row, which hands down an unbounded width. It will
+      // demand infinite width, layout will fail, and the un-laid-out ancestor
+      // makes hit testing throw — killing touch across the whole screen rather
+      // than just breaking one button. Wrap it in Expanded or Flexible, or give
+      // it an explicit minimumSize via styleFrom.
       minimumSize: const WidgetStatePropertyAll(Size.fromHeight(NphSize.buttonHeight)),
       padding: const WidgetStatePropertyAll(
         EdgeInsets.symmetric(horizontal: NphSpacing.lg),
@@ -170,11 +180,25 @@ OutlinedButtonThemeData _outlinedButtonTheme() => OutlinedButtonThemeData(
 
 /// Tertiary action — orange text, no background, no border. The design uses it
 /// for "Resend Code", "Sign In" and "Register a New Store".
+///
+/// minimumSize is `Size(48, 40)`, NOT `Size.fromHeight(40)`.
+///
+/// `Size.fromHeight` leaves width at **double.infinity**, which reads as "fill
+/// the parent" only where the parent hands down a bounded width. A TextButton
+/// is an inline control — the moment one sits in a Row beside other children it
+/// demands infinite width and layout fails with
+///
+///   BoxConstraints forces an infinite width.
+///
+/// That is not a local failure: the ancestor subtree is left un-laid-out, so
+/// hit testing throws, the pointer event is dropped, and the *entire screen*
+/// stops responding to touch while still looking fine. 48x40 keeps a
+/// comfortable tap target without constraining width at all.
 TextButtonThemeData _textButtonTheme() => const TextButtonThemeData(
       style: ButtonStyle(
         foregroundColor: WidgetStatePropertyAll(NphColors.orange),
         overlayColor: WidgetStatePropertyAll(Colors.transparent),
-        minimumSize: WidgetStatePropertyAll(Size.fromHeight(40)),
+        minimumSize: WidgetStatePropertyAll(Size(48, 40)),
         textStyle: WidgetStatePropertyAll(
           TextStyle(fontFamily: NphFonts.body, fontSize: 14, fontWeight: FontWeight.w600),
         ),

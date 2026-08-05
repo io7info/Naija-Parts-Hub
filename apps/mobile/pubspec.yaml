@@ -64,6 +64,22 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^5.0.0
 
+  # Mocking for widget and provider tests.
+  #
+  # mocktail rather than mockito: no build_runner, no generated .mocks.dart to
+  # keep in sync, and it stubs by call rather than by generated class — which
+  # suits this codebase, where the seams are hand-written service classes
+  # (ListingService, StoreService) injected through Riverpod providers.
+  #
+  # Deliberately NOT fake_cloud_firestore. Authorization and cross-store
+  # isolation are properties of firestore.rules, and a fake client does not
+  # evaluate rules — a test asserting "a dealer cannot read another store" would
+  # pass against the fake while the real rule was wide open. Those assertions
+  # live in firebase/tests, run by `npm run test:rules` against the real
+  # Emulator Suite. Widget tests here mock the service layer instead and assert
+  # presentation, which is the only thing they can honestly prove.
+  mocktail: ^1.0.4
+
 # ---------------------------------------------------------------------------
 # Removed from the inherited pubspec, deliberately:
 #

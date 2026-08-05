@@ -204,7 +204,8 @@ class NphListingListCard extends StatelessWidget {
   }
 }
 
-/// My Listings row — status badge, view count, last-updated, overflow menu.
+/// My Listings row — image, name, price, condition, category, status, last
+/// updated, pending-sync marker and an overflow menu (SOW §4).
 class NphListingRow extends StatelessWidget {
   const NphListingRow({
     super.key,
@@ -212,6 +213,8 @@ class NphListingRow extends StatelessWidget {
     required this.onAction,
     this.onTap,
     this.updatedLabel,
+    this.categoryLabel,
+    this.compactMenu = false,
   });
 
   final Listing listing;
@@ -221,92 +224,150 @@ class NphListingRow extends StatelessWidget {
   final VoidCallback? onTap;
   final String? updatedLabel;
 
+  /// Human category name. The document stores an id, and showing `engine` where
+  /// the rest of the app says "Engine" reads like a bug.
+  final String? categoryLabel;
+
+  /// Trims the menu to Edit only — used on the dashboard, where the full set of
+  /// lifecycle actions belongs on My Listings rather than on a summary card.
+  final bool compactMenu;
+
   @override
   Widget build(BuildContext context) {
     final isActive = listing.status == ListingStatus.active;
+    final isArchived = listing.status == ListingStatus.archived;
 
-    return NphCard(
-      onTap: onTap,
-      padding: const EdgeInsets.all(NphSpacing.md),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _Thumb(url: listing.images.isEmpty ? '' : listing.images.first.displayUrl, size: 80),
-          const SizedBox(width: NphSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  listing.name.isEmpty ? '(untitled)' : listing.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: NphFonts.body,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: NphColors.foreground,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  listing.priceLabel,
-                  style: const TextStyle(
-                    fontFamily: NphFonts.heading,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: NphColors.orange,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    NphStatusBadge.forListingStatus(listing.status.name),
-                    if (listing.hasPendingWrites) ...[
-                      const SizedBox(width: 6),
-                      const Icon(
-                        Icons.cloud_upload_outlined,
-                        size: 13,
-                        color: NphColors.warning,
-                      ),
-                    ],
-                  ],
-                ),
-                if (updatedLabel != null) ...[
-                  const SizedBox(height: 4),
+    return Semantics(
+      // One spoken sentence rather than eight disconnected fragments.
+      label: '${listing.name}, ${listing.priceLabel}, '
+          '${listing.condition}, ${listing.displayStatus}'
+          '${updatedLabel == null ? '' : ', $updatedLabel'}',
+      child: NphCard(
+        onTap: onTap,
+        padding: const EdgeInsets.all(NphSpacing.md),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _Thumb(url: listing.images.isEmpty ? '' : listing.images.first.displayUrl, size: 80),
+            const SizedBox(width: NphSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    updatedLabel!,
+                    listing.name.isEmpty ? '(untitled)' : listing.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontFamily: NphFonts.body,
-                      fontSize: 12,
-                      color: NphColors.mutedForeground,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
+                      color: NphColors.foreground,
                     ),
                   ),
+                  const SizedBox(height: 2),
+                  Text(
+                    listing.priceLabel,
+                    style: const TextStyle(
+                      fontFamily: NphFonts.heading,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: NphColors.orange,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  // Wrap, not Row: at three chips on a narrow handset with large
+                  // text these overflow, and a RenderFlex error is not something
+                  // a dealer should ever be shown.
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      if (listing.removed)
+                        const NphStatusBadge(label: 'Removed', tone: NphTone.error)
+                      else
+                        NphStatusBadge.forListingStatus(listing.status.name),
+                      NphConditionBadge(condition: listing.condition),
+                      if (categoryLabel != null && categoryLabel!.isNotEmpty)
+                        Text(
+                          categoryLabel!,
+                          style: const TextStyle(
+                            fontFamily: NphFonts.body,
+                            fontSize: 12,
+                            color: NphColors.mutedForeground,
+                          ),
+                        ),
+                      if (listing.hasPendingWrites)
+                        const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.cloud_upload_outlined,
+                              size: 13,
+                              color: NphColors.warning,
+                            ),
+                            SizedBox(width: 2),
+                            Text(
+                              'Waiting to sync',
+                              style: TextStyle(
+                                fontFamily: NphFonts.body,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: NphColors.warning,
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                  if (updatedLabel != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      updatedLabel!,
+                      style: const TextStyle(
+                        fontFamily: NphFonts.body,
+                        fontSize: 12,
+                        color: NphColors.mutedForeground,
+                      ),
+                    ),
+                  ],
                 ],
-              ],
-            ),
-          ),
-          PopupMenuButton<String>(
-            onSelected: onAction,
-            tooltip: 'More actions',
-            icon: const Icon(Icons.more_vert, size: 20, color: NphColors.mutedForeground),
-            shape: const RoundedRectangleBorder(borderRadius: NphRadius.fieldBorder),
-            itemBuilder: (_) => [
-              const PopupMenuItem(value: 'edit', child: Text('Edit')),
-              if (isActive)
-                const PopupMenuItem(value: 'unpublish', child: Text('Unpublish'))
-              else
-                const PopupMenuItem(value: 'publish', child: Text('Publish')),
-              if (isActive) const PopupMenuItem(value: 'share', child: Text('Share')),
-              if (isActive)
-                const PopupMenuItem(value: 'view', child: Text('View public page')),
-              const PopupMenuItem(
-                value: 'delete',
-                child: Text('Delete', style: TextStyle(color: NphColors.error)),
               ),
-            ],
-          ),
-        ],
+            ),
+            PopupMenuButton<String>(
+              onSelected: onAction,
+              tooltip: 'Listing actions',
+              icon: const Icon(Icons.more_vert, size: 20, color: NphColors.mutedForeground),
+              shape: const RoundedRectangleBorder(borderRadius: NphRadius.fieldBorder),
+              itemBuilder: (_) => compactMenu
+                  ? const [PopupMenuItem(value: 'edit', child: Text('Edit'))]
+                  : [
+                      const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                      // A removed listing cannot be republished by the dealer —
+                      // publishListing refuses it — so offering Publish would be
+                      // an action that always fails.
+                      if (!listing.removed)
+                        if (isActive)
+                          const PopupMenuItem(value: 'unpublish', child: Text('Unpublish'))
+                        else
+                          PopupMenuItem(
+                            value: 'publish',
+                            child: Text(isArchived ? 'Republish' : 'Publish'),
+                          ),
+                      if (isActive) ...[
+                        const PopupMenuItem(value: 'view', child: Text('View public page')),
+                        const PopupMenuItem(value: 'share', child: Text('Share link')),
+                      ],
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text('Delete', style: TextStyle(color: NphColors.error)),
+                      ),
+                    ],
+            ),
+          ],
+        ),
       ),
     );
   }

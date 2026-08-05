@@ -84,6 +84,14 @@ abstract final class Env {
     defaultValue: 'https://naijapartshub.ng',
   );
 
+  /// Support line, digits only for `wa.me`.
+  ///
+  /// A dart-define rather than a literal: the client's support number is not
+  /// settled, and it appears on four screens. PENDING client confirmation —
+  /// the current value is a placeholder and must be replaced before release.
+  static const String supportWhatsapp =
+      String.fromEnvironment('SUPPORT_WHATSAPP', defaultValue: '2348031234567');
+
   /// Shown when a free store hits the 10-listing limit. Web-only by design —
   /// selling an in-app upgrade would engage App Store Guideline 3.1.1.
   static const String upgradeUrl = String.fromEnvironment(

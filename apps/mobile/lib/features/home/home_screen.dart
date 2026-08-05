@@ -1,538 +1,535 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/env.dart';
 import '../../core/errors.dart';
+import '../../core/formatting.dart';
 import '../../design/components.dart';
 import '../../design/tokens.dart';
+import '../../models/listing.dart';
 import '../../models/store.dart';
-import '../../services/marketplace_service.dart';
+import '../../services/listing_service.dart';
+import '../../services/sync_status_service.dart';
 import '../../widgets/listing_card.dart';
+import '../listings/listing_form_screen.dart';
+import '../shell/shell_providers.dart';
+import '../store/store_profile_screen.dart';
+import '../sync/sync_status_screen.dart';
 
-/// The marketplace Home tab — where an approved dealer lands after sign-in.
+/// The dealer dashboard — the Home tab.
 ///
-/// Reads the public `listings` collection with `publiclyVisible == true`, the
-/// same filter the website uses and the same one the security rule requires.
-/// A dealer therefore sees exactly what a buyer sees, including their own live
-/// stock, which is the quickest honest answer to "is my part actually up?".
+/// Home used to be a buyer marketplace feed. Phase 1 Flutter is dealer-only
+/// (ADR-001 #5), so the first thing a dealer sees is now the state of their own
+/// business: what is live, what is waiting, and how much of their allowance is
+/// left. The marketplace screens are parked under
+/// features/buyer_marketplace_future/.
+///
+/// Every figure is derived from live Firestore state rather than stored. The
+/// listing counts come from the dealer's own stream; the quota comes from
+/// `activeListingCount` on the store document, which the publishListing
+/// transaction maintains.
+///
+/// "Product Views" and "WhatsApp Contacts" from the design mockup are
+/// deliberately absent. Nothing records either, and SOW §9 excludes analytics
+/// from Phase 1 — inventing those numbers beside a Verified badge is the one
+/// kind of placeholder that must not ship. Their slots hold counts that are
+/// real.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key, required this.store});
 
   final Store store;
 
-  /// Icons chosen to match the design's Popular Categories grid.
-  static const _categories = <(String, IconData, String)>[
-    ('Car Parts', Icons.directions_car_filled_outlined, 'engine'),
-    ('Motorcycle Parts', Icons.two_wheeler_outlined, 'motorcycle'),
-    ('Truck & Trailer', Icons.local_shipping_outlined, 'truck'),
-    ('Tractor & Farm', Icons.agriculture_outlined, 'tractor'),
-    ('Heavy Equipment', Icons.precision_manufacturing_outlined, 'heavy'),
-    ('Electrical Parts', Icons.bolt_outlined, 'electrical'),
-  ];
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final recent = ref.watch(recentListingsProvider);
-    final stores = ref.watch(verifiedStoresProvider);
+    final listings = ref.watch(myListingsProvider);
+
+    return listings.when(
+      loading: () => const _DashboardSkeleton(),
+      error: (e, _) => NphErrorState(
+        title: 'Could not load your listings',
+        message: friendlyError(e),
+        onRetry: () => ref.invalidate(myListingsProvider),
+      ),
+      data: (all) => _dashboard(context, ref, all),
+    );
+  }
+
+  Widget _dashboard(BuildContext context, WidgetRef ref, List<Listing> all) {
+    final active = all.where((l) => l.status == ListingStatus.active).length;
+    final drafts = all.where((l) => l.status == ListingStatus.draft).length;
+    final archived = all.where((l) => l.status == ListingStatus.archived).length;
 
     return RefreshIndicator(
       color: NphColors.orange,
-      onRefresh: () async {
-        ref.invalidate(recentListingsProvider);
-        ref.invalidate(verifiedStoresProvider);
-      },
+      onRefresh: () async => ref.invalidate(myListingsProvider),
       child: ListView(
         padding: const EdgeInsets.only(bottom: NphSpacing.xxxl),
         children: [
-          _featured(context, recent),
+          _greeting(context),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              NphSpacing.appPage,
+              NphSpacing.lg,
+              NphSpacing.appPage,
+              0,
+            ),
+            child: _planCard(context, ref),
+          ),
+          const SizedBox(height: NphSpacing.xl),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: NphSpacing.appPage),
+            child: _syncBanner(context, ref),
+          ),
+          const SizedBox(height: NphSpacing.xl),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: NphSpacing.appPage),
+            child: _stats(
+              active: active,
+              drafts: drafts,
+              archived: archived,
+              total: all.length,
+            ),
+          ),
           const SizedBox(height: NphSpacing.xxl),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: NphSpacing.appPage),
-            child: NphSectionHeader(
-              title: 'Popular Categories',
-              actionLabel: 'View all',
-              onAction: () {},
-            ),
-          ),
-          const SizedBox(height: NphSpacing.md),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: NphSpacing.appPage),
-            child: _categoryGrid(context),
+            child: _quickActions(context, ref),
           ),
           const SizedBox(height: NphSpacing.xxl),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: NphSpacing.appPage),
-            child: NphSectionHeader(
-              title: 'Recently Added',
-              actionLabel: 'See all',
-              onAction: () {},
-            ),
+            child: _recent(context, ref, all),
           ),
-          const SizedBox(height: NphSpacing.md),
-          _recentList(context, ref, recent),
-          const SizedBox(height: NphSpacing.xxl),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: NphSpacing.appPage),
-            child: NphSectionHeader(
-              title: 'Verified Stores Near You',
-              actionLabel: 'See all',
-              onAction: () {},
-            ),
-          ),
-          const SizedBox(height: NphSpacing.md),
-          _storeList(stores),
         ],
       ),
     );
   }
 
-  // --- Featured carousel ---------------------------------------------------
+  // --- Greeting ------------------------------------------------------------
 
-  Widget _featured(BuildContext context, AsyncValue<List<PublicListing>> recent) {
-    final items = (recent.valueOrNull ?? const <PublicListing>[]).take(4).toList();
+  Widget _greeting(BuildContext context) {
+    final hour = DateTime.now().hour;
+    final part = hour < 12
+        ? 'Good morning'
+        : hour < 17
+            ? 'Good afternoon'
+            : 'Good evening';
+    // First name only — "Good morning, Tinuoye Adeyemi" reads like a summons.
+    final firstName = store.ownerName.trim().split(RegExp(r'\s+')).first;
 
-    if (items.isEmpty) {
-      return Container(
-        height: 200,
-        margin: const EdgeInsets.symmetric(horizontal: NphSpacing.appPage),
-        decoration: const BoxDecoration(
-          color: NphColors.muted,
-          borderRadius: NphRadius.cardBorder,
-        ),
-        alignment: Alignment.center,
-        child: recent.isLoading
-            ? const NphLoading()
-            : const Text(
-                'No live listings yet',
-                style: TextStyle(
-                  fontFamily: NphFonts.body,
-                  fontSize: 13,
-                  color: NphColors.mutedForeground,
-                ),
-              ),
-      );
-    }
-
-    return _FeaturedCarousel(items: items);
-  }
-
-  // --- Categories ----------------------------------------------------------
-
-  Widget _categoryGrid(BuildContext context) {
-    return GridView.count(
-      crossAxisCount: 3,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: NphSpacing.md,
-      crossAxisSpacing: NphSpacing.md,
-      // Loosened from 0.95 to clear the enlarged icon tile. At three columns a
-      // card is ~118 dp wide, and 58 tile + 8 gap + two label lines + padding
-      // needs ~125 dp of height — "Heavy Equipment" and "Motorcycle Parts" both
-      // wrap, so the two-line case is the one that has to fit, not the one-line
-      // case.
-      childAspectRatio: 0.86,
-      children: [
-        for (final (label, icon, _) in _categories)
-          NphCard(
-            onTap: () {},
-            padding: const EdgeInsets.all(NphSpacing.md),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                NphIconTile(icon: icon, size: NphIconTileSize.category),
-                const SizedBox(height: NphSpacing.sm),
-                Text(
-                  label,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
+    return Container(
+      width: double.infinity,
+      color: NphColors.card,
+      padding: const EdgeInsets.fromLTRB(
+        NphSpacing.appPage,
+        NphSpacing.md,
+        NphSpacing.appPage,
+        0,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$part,',
+            style: const TextStyle(
+              fontFamily: NphFonts.body,
+              fontSize: 14,
+              color: NphColors.mutedForeground,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            firstName.isEmpty ? 'there' : firstName,
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Flexible(
+                child: Text(
+                  store.businessName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontFamily: NphFonts.body,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    height: 1.2,
-                    color: NphColors.foreground,
-                  ),
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-
-  // --- Recently added ------------------------------------------------------
-
-  Widget _recentList(
-    BuildContext context,
-    WidgetRef ref,
-    AsyncValue<List<PublicListing>> recent,
-  ) {
-    return recent.when(
-      loading: () => const Padding(
-        padding: EdgeInsets.symmetric(vertical: NphSpacing.xxl),
-        child: NphLoading(),
-      ),
-      error: (e, _) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: NphSpacing.appPage),
-        child: NphNotice(message: friendlyError(e)),
-      ),
-      data: (items) {
-        if (items.isEmpty) {
-          return const NphEmptyState(
-            icon: Icons.inventory_2_outlined,
-            title: 'Nothing listed yet',
-            message: 'Published parts from verified dealers will appear here.',
-          );
-        }
-        return Column(
-          children: [
-            for (final item in items.take(6))
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  NphSpacing.appPage,
-                  0,
-                  NphSpacing.appPage,
-                  NphSpacing.md,
-                ),
-                child: NphListingListCard(
-                  listing: item.listing,
-                  storeName: item.store.businessName,
-                  locationLabel: item.store.locationLabel,
-                  onTap: () => _openListing(item),
-                  onContact: () => _contact(item),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<void> _openListing(PublicListing item) async {
-    final uri = Uri.parse('${Env.marketplaceOrigin}/parts/${item.listing.listingId}');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-  }
-
-  /// wa.me handoff — the same buyer-to-dealer path the website uses. Payment,
-  /// negotiation and delivery all happen off-platform in Phase 1.
-  Future<void> _contact(PublicListing item) async {
-    final number = (item.store.whatsapp.isNotEmpty ? item.store.whatsapp : item.store.phone)
-        .replaceAll(RegExp(r'[^0-9]'), '');
-    if (number.isEmpty) return;
-
-    final text = Uri.encodeComponent(
-      'Hello ${item.store.businessName}, is "${item.listing.name}" still available?',
-    );
-    final uri = Uri.parse('https://wa.me/$number?text=$text');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-  }
-
-  // --- Verified stores -----------------------------------------------------
-
-  Widget _storeList(AsyncValue<List<PublicStore>> stores) {
-    return stores.when(
-      loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
-      data: (items) {
-        if (items.isEmpty) return const SizedBox.shrink();
-        return Column(
-          children: [
-            for (final s in items.take(5))
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  NphSpacing.appPage,
-                  0,
-                  NphSpacing.appPage,
-                  NphSpacing.md,
-                ),
-                child: NphCard(
-                  padding: const EdgeInsets.all(NphSpacing.md),
-                  onTap: () async {
-                    final uri = Uri.parse('${Env.marketplaceOrigin}/store/${s.slug}');
-                    if (await canLaunchUrl(uri)) {
-                      await launchUrl(uri, mode: LaunchMode.externalApplication);
-                    }
-                  },
-                  child: Row(
-                    children: [
-                      NphInitialsAvatar(name: s.businessName, size: 48),
-                      const SizedBox(width: NphSpacing.md),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    s.businessName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontFamily: NphFonts.body,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                      color: NphColors.foreground,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                const NphVerifiedBadge(compact: true),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                const Icon(
-                                  Icons.location_on_outlined,
-                                  size: 12,
-                                  color: NphColors.mutedForeground,
-                                ),
-                                const SizedBox(width: 2),
-                                Text(
-                                  s.locationLabel,
-                                  style: const TextStyle(
-                                    fontFamily: NphFonts.body,
-                                    fontSize: 12,
-                                    color: NphColors.mutedForeground,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 2),
-                            Row(
-                              children: [
-                                const Icon(
-                                  Icons.storefront_outlined,
-                                  size: 12,
-                                  color: NphColors.mutedForeground,
-                                ),
-                                const SizedBox(width: 2),
-                                Text(
-                                  '${s.activeListingCount} active listings',
-                                  style: const TextStyle(
-                                    fontFamily: NphFonts.body,
-                                    fontSize: 12,
-                                    color: NphColors.mutedForeground,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                    fontSize: 14,
+                    color: NphColors.mutedForeground,
                   ),
                 ),
               ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-/// Full-bleed hero carousel with a dark scrim so overlaid text stays legible
-/// over any photo, plus the dot indicator from the design.
-class _FeaturedCarousel extends StatefulWidget {
-  const _FeaturedCarousel({required this.items});
-
-  final List<PublicListing> items;
-
-  @override
-  State<_FeaturedCarousel> createState() => _FeaturedCarouselState();
-}
-
-class _FeaturedCarouselState extends State<_FeaturedCarousel> {
-  final _controller = PageController();
-  int _page = 0;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 300,
-      child: Stack(
-        children: [
-          PageView.builder(
-            controller: _controller,
-            onPageChanged: (i) => setState(() => _page = i),
-            itemCount: widget.items.length,
-            itemBuilder: (_, i) => _slide(widget.items[i]),
-          ),
-          // Dots sit ON the image rather than in a strip beneath it. The
-          // approved design places them below, but that leaves a band of white
-          // between the hero and Popular Categories which reads as a gap rather
-          // than as part of the hero.
-          //
-          // Tappable, not decorative: each dot jumps to its slide, so a dealer
-          // can reach the fourth item without swiping three times.
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: NphSpacing.md,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                for (var i = 0; i < widget.items.length; i++)
-                  GestureDetector(
-                    onTap: () => _controller.animateToPage(
-                      i,
-                      duration: const Duration(milliseconds: 260),
-                      curve: Curves.easeOut,
-                    ),
-                    // Transparent padding widens the 6 px dot to a real tap
-                    // target without changing how it looks.
-                    behavior: HitTestBehavior.opaque,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 8),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        width: i == _page ? 20 : 6,
-                        height: 6,
-                        decoration: BoxDecoration(
-                          // Inactive dots are white-on-scrim, not the light
-                          // border grey — that colour is invisible against a
-                          // photograph.
-                          color: i == _page
-                              ? NphColors.orange
-                              : Colors.white.withValues(alpha: 0.45),
-                          borderRadius: NphRadius.pillBorder,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+              const SizedBox(width: NphSpacing.sm),
+              if (store.status == StoreStatus.approved)
+                const NphVerifiedBadge(compact: true)
+              else
+                NphStatusBadge.forStoreStatus(store.status.name),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _slide(PublicListing item) {
-    final url = item.listing.images.isEmpty ? '' : item.listing.images.first.displayUrl;
+  // --- Plan card -----------------------------------------------------------
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        if (url.isEmpty)
-          Container(color: NphColors.muted)
-        else
-          CachedNetworkImage(
-            imageUrl: url,
-            fit: BoxFit.cover,
-            placeholder: (_, __) => Container(color: NphColors.muted),
-            errorWidget: (_, __, ___) => Container(color: NphColors.muted),
-          ),
-        // `bg-gradient-to-t from-black/85 via-black/45 to-transparent` over the
-        // lower three fifths.
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          height: 180,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.bottomCenter,
-                end: Alignment.topCenter,
-                colors: [
-                  Colors.black.withValues(alpha: 0.85),
-                  Colors.black.withValues(alpha: 0.45),
-                  Colors.transparent,
-                ],
-              ),
-            ),
-          ),
+  Widget _planCard(BuildContext context, WidgetRef ref) {
+    final limit = store.activeListingLimit;
+    final used = store.activeListingCount;
+    final planName = store.subscription.isPaid
+        ? '${store.subscription.plan[0].toUpperCase()}'
+            '${store.subscription.plan.substring(1)} Plan'
+        : 'Free Plan';
+
+    return Semantics(
+      label: '$planName. $used of $limit active listings used.',
+      child: Container(
+        padding: const EdgeInsets.all(NphSpacing.lg),
+        decoration: const BoxDecoration(
+          color: NphColors.softBlack,
+          borderRadius: NphRadius.cardBorder,
         ),
-        Positioned(
-          left: NphSpacing.md,
-          top: NphSpacing.md,
-          child: NphConditionBadge(condition: item.listing.condition),
-        ),
-        Positioned(
-          left: NphSpacing.lg,
-          right: NphSpacing.lg,
-          // Clears the pagination dots, which now overlay the image bottom.
-          bottom: 38,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                item.listing.name,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontFamily: NphFonts.body,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  height: 1.3,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                item.listing.priceLabel,
-                style: const TextStyle(
-                  fontFamily: NphFonts.heading,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: NphColors.orange,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      item.store.businessName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: NphFonts.body,
-                        fontSize: 12,
-                        color: Colors.white.withValues(alpha: 0.75),
-                      ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.10),
+                    borderRadius: NphRadius.pillBorder,
+                  ),
+                  child: Text(
+                    planName,
+                    style: const TextStyle(
+                      fontFamily: NphFonts.body,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  const NphVerifiedBadge(compact: true),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Icon(
-                    Icons.location_on_outlined,
-                    size: 12,
-                    color: Colors.white.withValues(alpha: 0.60),
-                  ),
-                  const SizedBox(width: 2),
-                  Text(
-                    item.store.locationLabel,
+                ),
+                Flexible(
+                  child: Text(
+                    '$used of $limit active listings used',
+                    textAlign: TextAlign.right,
                     style: TextStyle(
                       fontFamily: NphFonts.body,
                       fontSize: 12,
                       color: Colors.white.withValues(alpha: 0.60),
                     ),
                   ),
-                ],
+                ),
+              ],
+            ),
+            const SizedBox(height: NphSpacing.md),
+            NphProgressBar(value: limit == 0 ? 0 : used / limit, onDark: true),
+            const SizedBox(height: NphSpacing.md),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                // "on Website", not "Upgrade". Selling a subscription in-app
+                // engages App Store Guideline 3.1.1, which requires Apple's
+                // in-app purchase for digital goods. ADR-001 open item #3 keeps
+                // the paid upgrade on the web for exactly that reason.
+                onPressed: _openPlansPage,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(NphSize.buttonHeightSmall),
+                ),
+                child: const Text('Manage Plan on Website'),
               ),
-            ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openPlansPage() async {
+    final uri = Uri.parse('${Env.marketplaceOrigin}/plans');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  // --- Sync banner ---------------------------------------------------------
+
+  /// Three states only: synced, pending, offline.
+  ///
+  /// There is deliberately no "sync failed" and no Retry. Firestore's offline
+  /// persistence queues writes and replays them itself — there is no failure to
+  /// report and nothing for a retry button to do. Individual write and upload
+  /// failures are surfaced where they happen, which is where a dealer can
+  /// actually act on them.
+  Widget _syncBanner(BuildContext context, WidgetRef ref) {
+    final sync = ref.watch(syncStatusProvider).valueOrNull;
+    final state = sync?.state ?? SyncState.synced;
+
+    final (tone, icon) = switch (state) {
+      SyncState.synced => (NphTone.success, Icons.cloud_done_outlined),
+      SyncState.pending => (NphTone.warning, Icons.cloud_upload_outlined),
+      SyncState.offline => (NphTone.neutral, Icons.cloud_off_outlined),
+    };
+
+    return NphBanner(
+      message: sync?.label ?? 'All changes saved',
+      tone: tone,
+      icon: icon,
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const SyncStatusScreen()),
+      ),
+    );
+  }
+
+  // --- Stats ---------------------------------------------------------------
+
+  Widget _stats({
+    required int active,
+    required int drafts,
+    required int archived,
+    required int total,
+  }) {
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: NphSpacing.md,
+      crossAxisSpacing: NphSpacing.md,
+      childAspectRatio: 1.55,
+      children: [
+        _StatCard(icon: Icons.check_circle_outline, value: '$active', label: 'Active Listings'),
+        _StatCard(icon: Icons.edit_note, value: '$drafts', label: 'Draft Listings'),
+        _StatCard(icon: Icons.inventory_2_outlined, value: '$archived', label: 'Archived Listings'),
+        _StatCard(icon: Icons.widgets_outlined, value: '$total', label: 'Total Products'),
+      ],
+    );
+  }
+
+  // --- Quick actions -------------------------------------------------------
+
+  Widget _quickActions(BuildContext context, WidgetRef ref) {
+    final actions = <(IconData, String, VoidCallback)>[
+      (
+        Icons.add_circle_outline,
+        'Add New Listing',
+        () => goToShellTab(ref, ShellTab.addListing),
+      ),
+      (
+        Icons.checklist_rtl,
+        'Manage Listings',
+        () => goToShellTab(ref, ShellTab.listings, listingsTab: ListingsTab.active),
+      ),
+      (Icons.storefront_outlined, 'View Public Store', _openPublicStore),
+      (
+        Icons.manage_accounts_outlined,
+        'Edit Store Profile',
+        () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => StoreProfileScreen(store: store)),
+            ),
+      ),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const NphSectionHeader(title: 'Quick Actions'),
+        const SizedBox(height: NphSpacing.md),
+        GridView.count(
+          crossAxisCount: 2,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: NphSpacing.md,
+          crossAxisSpacing: NphSpacing.md,
+          childAspectRatio: 2.35,
+          children: [
+            for (final (icon, label, onTap) in actions)
+              NphCard(
+                onTap: onTap,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: NphSpacing.md),
+                child: Row(
+                  children: [
+                    Icon(icon, size: 20, color: NphColors.orange),
+                    const SizedBox(width: NphSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: const TextStyle(
+                          fontFamily: NphFonts.body,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          height: 1.25,
+                          color: NphColors.foreground,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _openPublicStore() async {
+    if (store.slug.isEmpty) return;
+    final uri = Uri.parse('${Env.marketplaceOrigin}/store/${store.slug}');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  // --- Recent listings -----------------------------------------------------
+
+  Widget _recent(BuildContext context, WidgetRef ref, List<Listing> all) {
+    // Most recently *updated*, which is what a dealer is looking for after an
+    // edit. sortKey falls back to now() for unsynced writes so a draft created
+    // seconds ago does not sink to the bottom for want of a server timestamp.
+    final recent = [...all]..sort((a, b) => b.sortKey.compareTo(a.sortKey));
+    final top = recent.take(3).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        NphSectionHeader(
+          title: 'Recent Listings',
+          actionLabel: 'Manage',
+          showChevron: true,
+          onAction: () => goToShellTab(ref, ShellTab.listings),
+        ),
+        const SizedBox(height: NphSpacing.md),
+        if (top.isEmpty)
+          NphEmptyState(
+            icon: Icons.inventory_2_outlined,
+            title: 'No listings yet',
+            message: 'Add your first part. It goes live on the marketplace as soon '
+                'as you publish it.',
+            action: FilledButton(
+              onPressed: () => goToShellTab(ref, ShellTab.addListing),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(180, NphSize.buttonHeightSmall),
+              ),
+              child: const Text('Add Listing'),
+            ),
+          )
+        else
+          for (final listing in top)
+            Padding(
+              padding: const EdgeInsets.only(bottom: NphSpacing.md),
+              child: NphListingRow(
+                listing: listing,
+                updatedLabel: 'Updated ${relativeTime(listing.updatedAt)}',
+                onTap: () => _edit(context, listing),
+                onAction: (a) => a == 'edit'
+                    ? _edit(context, listing)
+                    : goToShellTab(ref, ShellTab.listings),
+                compactMenu: true,
+              ),
+            ),
+      ],
+    );
+  }
+
+  void _edit(BuildContext context, Listing listing) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ListingFormScreen(storeId: store.storeId, existing: listing),
+      ),
+    );
+  }
+}
+
+class _StatCard extends StatelessWidget {
+  const _StatCard({required this.icon, required this.value, required this.label});
+
+  final IconData icon;
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: '$value $label',
+      child: NphCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            NphIconTile(icon: icon),
+            const Spacer(),
+            Text(
+              value,
+              style: const TextStyle(
+                fontFamily: NphFonts.heading,
+                fontSize: 24,
+                fontWeight: FontWeight.w700,
+                height: 1,
+                color: NphColors.foreground,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontFamily: NphFonts.body,
+                fontSize: 12,
+                color: NphColors.mutedForeground,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Loading skeleton rather than a bare spinner.
+///
+/// The dashboard's shape is known before its data is, so showing that shape
+/// keeps the layout from jumping when the stream arrives — and tells a dealer
+/// on a slow connection that something is coming, not that nothing is there.
+class _DashboardSkeleton extends StatelessWidget {
+  const _DashboardSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    Widget block(double height, {double? width}) => Container(
+          height: height,
+          width: width,
+          decoration: const BoxDecoration(
+            color: NphColors.muted,
+            borderRadius: NphRadius.cardBorder,
           ),
+        );
+
+    return ListView(
+      padding: const EdgeInsets.all(NphSpacing.appPage),
+      children: [
+        block(18, width: 120),
+        const SizedBox(height: NphSpacing.sm),
+        block(26, width: 180),
+        const SizedBox(height: NphSpacing.xl),
+        block(150),
+        const SizedBox(height: NphSpacing.xl),
+        block(40),
+        const SizedBox(height: NphSpacing.xl),
+        Row(
+          children: [
+            Expanded(child: block(86)),
+            const SizedBox(width: NphSpacing.md),
+            Expanded(child: block(86)),
+          ],
+        ),
+        const SizedBox(height: NphSpacing.md),
+        Row(
+          children: [
+            Expanded(child: block(86)),
+            const SizedBox(width: NphSpacing.md),
+            Expanded(child: block(86)),
+          ],
         ),
       ],
     );

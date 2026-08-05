@@ -345,26 +345,38 @@ class NphFieldLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Flexible + ellipsis, not bare Text. These labels sit in half-width
+    // columns ("Vehicle make" / "Vehicle model"), and a bare Text in a Row has
+    // no upper bound — "Part number / SKU (optional)" overflowed by 39 px on a
+    // 400 dp handset, and would overflow far worse at large text scale.
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         children: [
-          Text(
-            text,
-            style: const TextStyle(
-              fontFamily: NphFonts.body,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: NphColors.foreground,
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontFamily: NphFonts.body,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: NphColors.foreground,
+              ),
             ),
           ),
           if (optional)
-            const Text(
-              ' (optional)',
-              style: TextStyle(
-                fontFamily: NphFonts.body,
-                fontSize: 13,
-                color: NphColors.mutedForeground,
+            const Flexible(
+              child: Text(
+                ' (optional)',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: NphFonts.body,
+                  fontSize: 13,
+                  color: NphColors.mutedForeground,
+                ),
               ),
             ),
         ],
@@ -824,6 +836,8 @@ class NphSettingsRow extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontFamily: NphFonts.body,
                   fontSize: 14,
@@ -832,15 +846,25 @@ class NphSettingsRow extends StatelessWidget {
                 ),
               ),
             ),
+            // Flexible, and capped at roughly half the row. Values here are
+            // free text — a store address or a full name — and a bare Text in a
+            // Row is unbounded, so "50 Ladipo Market Road, Mushin, Lagos"
+            // overflowed by 55 px. Ellipsis truncates the value rather than the
+            // label, because the label is what makes the row scannable.
             if (value != null)
-              Padding(
-                padding: const EdgeInsets.only(right: NphSpacing.sm),
-                child: Text(
-                  value!,
-                  style: const TextStyle(
-                    fontFamily: NphFonts.body,
-                    fontSize: 13,
-                    color: NphColors.mutedForeground,
+              Flexible(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: NphSpacing.sm, right: NphSpacing.sm),
+                  child: Text(
+                    value!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      fontFamily: NphFonts.body,
+                      fontSize: 13,
+                      color: NphColors.mutedForeground,
+                    ),
                   ),
                 ),
               ),
