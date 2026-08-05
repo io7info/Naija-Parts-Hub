@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -191,7 +192,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                     child: const Text('Change Phone Number'),
                   ),
 
-                  if (Env.useEmulator) ...[
+                  if (kDebugMode && Env.useEmulator) ...[
                     const SizedBox(height: NphSpacing.sm),
                     Text(
                       'Emulator: code filled in automatically',

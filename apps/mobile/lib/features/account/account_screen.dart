@@ -4,17 +4,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/env.dart';
-import '../../core/errors.dart';
 import '../../core/formatting.dart';
 import '../../design/components.dart';
 import '../../design/tokens.dart';
 import '../../models/store.dart';
 import '../../services/auth_service.dart';
-import '../../services/listing_service.dart';
 import '../plan/plan_status_screen.dart';
 import '../shell/shell_providers.dart';
 import '../store/store_profile_screen.dart';
 import '../sync/sync_status_screen.dart';
+import 'delete_account_screen.dart';
 
 /// Account settings.
 ///
@@ -116,7 +115,14 @@ class AccountScreen extends ConsumerWidget {
               icon: Icons.delete_outline,
               label: 'Delete Account',
               tone: NphColors.error,
-              onTap: () => _confirmDelete(context, ref),
+              // A full screen, not a dialog: deletion requires a typed
+              // confirmation *and* phone-OTP reauthentication, which is two
+              // async steps with their own error and retry states.
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => DeleteAccountScreen(store: store),
+                ),
+              ),
             ),
           ],
         ),
@@ -232,90 +238,6 @@ class AccountScreen extends ConsumerWidget {
     await ref.read(authServiceProvider).signOut();
   }
 
-  /// Two-step, typed confirmation. Required by Apple 5.1.1(v) and Google Play.
-  ///
-  /// The dialog states exactly what is destroyed before asking, because a
-  /// dealer cannot get any of it back: every listing, every photo, the store
-  /// record and the store URL — which means any link a buyer has saved.
-  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
-    final controller = TextEditingController();
-    final messenger = ScaffoldMessenger.of(context);
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setInner) => AlertDialog(
-          backgroundColor: NphColors.card,
-          shape: const RoundedRectangleBorder(borderRadius: NphRadius.cardBorder),
-          title: const Text('Delete your account?'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'This permanently deletes:\n\n'
-                  '  • your store "${store.businessName}"\n'
-                  '  • all ${store.activeListingCount} active listings and every draft\n'
-                  '  • all product photos\n'
-                  '  • your store link naijapartshub.ng/store/${store.slug}\n\n'
-                  'It cannot be undone, and the store link cannot be reissued.',
-                  style: const TextStyle(
-                    fontFamily: NphFonts.body,
-                    fontSize: 14,
-                    height: 1.5,
-                  ),
-                ),
-                const SizedBox(height: NphSpacing.lg),
-                const Text(
-                  'Type DELETE to confirm.',
-                  style: TextStyle(
-                    fontFamily: NphFonts.body,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: NphSpacing.sm),
-                TextField(
-                  controller: controller,
-                  autofocus: true,
-                  textCapitalization: TextCapitalization.characters,
-                  decoration: const InputDecoration(hintText: 'DELETE'),
-                  onChanged: (_) => setInner(() {}),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              style: TextButton.styleFrom(foregroundColor: NphColors.mutedForeground),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              // Stays disabled until the word matches — the guard is the typing,
-              // not the tapping.
-              onPressed:
-                  controller.text.trim() == 'DELETE' ? () => Navigator.of(ctx).pop(true) : null,
-              style: TextButton.styleFrom(foregroundColor: NphColors.error),
-              child: const Text('Delete account'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    controller.dispose();
-    if (ok != true) return;
-
-    try {
-      await ref.read(listingServiceProvider).deleteAccount();
-      // Deleting the auth user invalidates the token, so the auth stream emits
-      // null and the gate returns to sign-in on its own.
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(friendlyError(e))));
-    }
-  }
 }
 
 class _Footer extends StatelessWidget {

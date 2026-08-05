@@ -1,4 +1,4 @@
-﻿import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/listing.dart';
@@ -6,7 +6,7 @@ import '../../services/store_service.dart';
 
 /// Public marketplace reads for the in-app Home and Search tabs.
 ///
-/// Every query carries `publiclyVisible == true` â€” the single backend-
+/// Every query carries `publiclyVisible == true` — the single backend-
 /// maintained boolean that stands for
 /// `status == 'active' && storeApproved && storeVisible && !moderation.removed`.
 /// That is not a convenience: Firestore only permits a `list` whose filters

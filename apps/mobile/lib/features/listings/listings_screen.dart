@@ -85,74 +85,94 @@ class _ListingsScreenState extends ConsumerState<ListingsScreen>
     final listings = ref.watch(myListingsProvider);
     final categories = ref.watch(categoriesProvider).valueOrNull ?? const <Category>[];
 
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            NphSpacing.appPage,
-            NphSpacing.md,
-            NphSpacing.appPage,
-            NphSpacing.sm,
-          ),
-          child: Column(
-            children: [
-              Row(
+    return LayoutBuilder(
+      builder: (context, constraints) => Column(
+        children: [
+          // Capped and scrollable, not a plain Padding. The title, search
+          // field, filter chips and quota strip are all unflexed, so at a 2.0x
+          // system font they together demand more than a 760px handset has —
+          // and the Expanded body below cannot give back space it never had.
+          // The result was a 56px overflow, which leaves the subtree
+          // un-laid-out and makes the pane stop responding to touch.
+          //
+          // A ConstrainedBox rather than Flexible: two flex children would
+          // split the free space evenly, so the list would lose half the screen
+          // at every text size. This caps the header instead, and at ordinary
+          // sizes it is well under the cap and never scrolls — nothing changes
+          // for the usual case.
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: constraints.maxHeight * 0.55),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(
+                NphSpacing.appPage,
+                NphSpacing.md,
+                NphSpacing.appPage,
+                NphSpacing.sm,
+              ),
+              child: Column(
                 children: [
-                  Expanded(child: Text('My Listings', style: Theme.of(context).textTheme.titleLarge)),
-                  TextButton.icon(
-                    onPressed: () => goToShellTab(ref, ShellTab.addListing),
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Add'),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text('My Listings',
+                            style: Theme.of(context).textTheme.titleLarge),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => goToShellTab(ref, ShellTab.addListing),
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('Add'),
+                      ),
+                    ],
                   ),
+                  const SizedBox(height: NphSpacing.sm),
+                  _searchField(),
+                  const SizedBox(height: NphSpacing.sm),
+                  _filterRow(categories),
+                  const SizedBox(height: NphSpacing.sm),
+                  _quotaStrip(widget.store),
                 ],
               ),
-              const SizedBox(height: NphSpacing.sm),
-              _searchField(),
-              const SizedBox(height: NphSpacing.sm),
-              _filterRow(categories),
-              const SizedBox(height: NphSpacing.sm),
-              _quotaStrip(widget.store),
-            ],
-          ),
-        ),
-        TabBar(
-          controller: _tabs,
-          labelColor: NphColors.orange,
-          unselectedLabelColor: NphColors.mutedForeground,
-          indicatorColor: NphColors.orange,
-          indicatorWeight: 2,
-          dividerColor: NphColors.border,
-          labelStyle: const TextStyle(
-            fontFamily: NphFonts.body,
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-          ),
-          unselectedLabelStyle: const TextStyle(
-            fontFamily: NphFonts.body,
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-          ),
-          tabs: const [Tab(text: 'Active'), Tab(text: 'Draft'), Tab(text: 'Archived')],
-        ),
-        Expanded(
-          child: listings.when(
-            loading: () => const NphLoading(),
-            error: (e, _) => NphErrorState(
-              title: 'Could not load listings',
-              message: friendlyError(e),
-              onRetry: () => ref.invalidate(myListingsProvider),
-            ),
-            data: (items) => TabBarView(
-              controller: _tabs,
-              children: [
-                _tabView(items, ListingStatus.active, categories),
-                _tabView(items, ListingStatus.draft, categories),
-                _tabView(items, ListingStatus.archived, categories),
-              ],
             ),
           ),
-        ),
-      ],
+          TabBar(
+            controller: _tabs,
+            labelColor: NphColors.orange,
+            unselectedLabelColor: NphColors.mutedForeground,
+            indicatorColor: NphColors.orange,
+            indicatorWeight: 2,
+            dividerColor: NphColors.border,
+            labelStyle: const TextStyle(
+              fontFamily: NphFonts.body,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+            unselectedLabelStyle: const TextStyle(
+              fontFamily: NphFonts.body,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+            tabs: const [Tab(text: 'Active'), Tab(text: 'Draft'), Tab(text: 'Archived')],
+          ),
+          Expanded(
+            child: listings.when(
+              loading: () => const NphLoading(),
+              error: (e, _) => NphErrorState(
+                title: 'Could not load listings',
+                message: friendlyError(e),
+                onRetry: () => ref.invalidate(myListingsProvider),
+              ),
+              data: (items) => TabBarView(
+                controller: _tabs,
+                children: [
+                  _tabView(items, ListingStatus.active, categories),
+                  _tabView(items, ListingStatus.draft, categories),
+                  _tabView(items, ListingStatus.archived, categories),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

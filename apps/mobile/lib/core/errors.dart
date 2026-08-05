@@ -50,6 +50,26 @@ String friendlyError(Object error) {
   }
 
   if (error is FirebaseException) {
+    // Firestore and Storage refusals arrive here. `permission-denied` is the
+    // one a dealer is most likely to hit, and its raw message ("Missing or
+    // insufficient permissions.") reads like a bug in the app rather than what
+    // it usually is: a store that is still pending, or has been suspended.
+    switch (error.code) {
+      case 'permission-denied':
+        return 'You do not have access to this yet. If your business is still '
+            'awaiting approval, publishing and editing unlock once an '
+            'administrator approves it.';
+      case 'unauthenticated':
+        return 'Your session has expired. Please sign in again.';
+      case 'unavailable':
+        return 'Could not reach the server. Your changes are saved on this '
+            'phone and will sync when you are back online.';
+      case 'not-found':
+        return 'That item no longer exists. It may have been deleted from '
+            'another device.';
+      case 'resource-exhausted':
+        return 'You have reached a limit on your plan.';
+    }
     return _tidy(error.message ?? 'Something went wrong. Please try again.');
   }
 

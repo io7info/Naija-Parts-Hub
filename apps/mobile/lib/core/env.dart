@@ -17,15 +17,26 @@ library;
 
 import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
 
 enum AppEnvironment { emulator, live }
 
 abstract final class Env {
-  /// Defaults to true so a fresh checkout runs fully offline against the
-  /// Local Emulator Suite with no credentials and no Firebase project.
+  /// Emulator in debug and profile; **never** by default in release.
+  ///
+  /// The default used to be an unconditional `true`, which meant
+  /// `flutter build apk --release` with no `--dart-define` produced a *release*
+  /// build wired to 10.0.2.2 — an app that shows emulator diagnostics, cannot
+  /// reach any backend on a real handset, and would have failed store review
+  /// while looking fine on the build machine. Nothing in the build would have
+  /// warned anyone.
+  ///
+  /// `kReleaseMode` is a compile-time constant (`dart.vm.product`), so this
+  /// stays a `const` and the emulator wiring is still tree-shaken out of
+  /// release binaries. An explicit `--dart-define` overrides either way, which
+  /// is what the two-direction switch test relies on.
   static const bool useEmulator =
-      bool.fromEnvironment('USE_FIREBASE_EMULATOR', defaultValue: true);
+      bool.fromEnvironment('USE_FIREBASE_EMULATOR', defaultValue: !kReleaseMode);
 
   static AppEnvironment get current =>
       useEmulator ? AppEnvironment.emulator : AppEnvironment.live;

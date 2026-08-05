@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,7 +12,7 @@ import '../../models/store.dart';
 import 'marketplace_service.dart';
 import '../../widgets/listing_card.dart';
 
-/// Marketplace search (SOW Â§7) â€” by product name or part number.
+/// Marketplace search (SOW Â§7) — by product name or part number.
 ///
 /// Backed by `searchTokens`, the prefix-token array a Firestore trigger
 /// generates from name + brand + partNumber. That array is deliberately not
@@ -20,8 +20,8 @@ import '../../widgets/listing_card.dart';
 /// for every search term on the platform.
 ///
 /// One token per query is a Firestore constraint (`array-contains` takes a
-/// single value), so multi-word input matches on its longest word â€” the most
-/// selective one â€” rather than silently returning nothing.
+/// single value), so multi-word input matches on its longest word — the most
+/// selective one — rather than silently returning nothing.
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key, required this.store});
 

@@ -209,59 +209,81 @@ class NphBottomNav extends StatelessWidget {
       ),
       child: SafeArea(
         top: false,
-        child: SizedBox(
-          height: 64,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _NavItem(
-                    icon: Icons.dashboard_outlined,
-                    activeIcon: Icons.dashboard,
-                    label: 'Home',
-                    active: current == ShellTab.home,
-                    onTap: () => onSelect(ShellTab.home),
-                  ),
-                  _NavItem(
-                    icon: Icons.inventory_2_outlined,
-                    activeIcon: Icons.inventory_2,
-                    label: 'Listings',
-                    active: current == ShellTab.listings,
-                    onTap: () => onSelect(ShellTab.listings),
-                  ),
-                  // Reserves the centre slot so the four flat tabs keep even
-                  // widths; the circle is painted over it below.
-                  const Spacer(),
-                  _NavItem(
-                    icon: Icons.storefront_outlined,
-                    activeIcon: Icons.storefront,
-                    label: 'My Store',
-                    active: current == ShellTab.myStore,
-                    onTap: () => onSelect(ShellTab.myStore),
-                  ),
-                  _NavItem(
-                    icon: Icons.person_outline,
-                    activeIcon: Icons.person,
-                    label: 'Account',
-                    active: current == ShellTab.account,
-                    onTap: () => onSelect(ShellTab.account),
-                  ),
-                ],
-              ),
-              Positioned(
-                top: -22,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: _AddButton(
-                    active: current == ShellTab.addListing,
-                    onTap: () => onSelect(ShellTab.addListing),
-                  ),
-                ),
-              ),
-            ],
+        // A navigation bar that grows without limit stops being a navigation
+        // bar. At 2.0x the raised centre button's label grew wider than its
+        // slot and — being painted above the Row — silently swallowed the taps
+        // meant for Listings and My Store. Clamping keeps every tab reachable.
+        // The panes themselves still scale to the full 2.0x; only these five
+        // labels are held back, and each one sits under an icon that carries
+        // the same meaning.
+        child: MediaQuery.withClampedTextScaling(
+          maxScaleFactor: 1.3,
+          child: SizedBox(
+            height: 64,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // Five equal slots: four tabs and the reserved centre.
+                final slot = constraints.maxWidth / 5;
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _NavItem(
+                          icon: Icons.dashboard_outlined,
+                          activeIcon: Icons.dashboard,
+                          label: 'Home',
+                          active: current == ShellTab.home,
+                          onTap: () => onSelect(ShellTab.home),
+                        ),
+                        _NavItem(
+                          icon: Icons.inventory_2_outlined,
+                          activeIcon: Icons.inventory_2,
+                          label: 'Listings',
+                          active: current == ShellTab.listings,
+                          onTap: () => onSelect(ShellTab.listings),
+                        ),
+                        // Reserves the centre slot so the four flat tabs keep
+                        // even widths; the circle is painted over it below.
+                        const Spacer(),
+                        _NavItem(
+                          icon: Icons.storefront_outlined,
+                          activeIcon: Icons.storefront,
+                          label: 'My Store',
+                          active: current == ShellTab.myStore,
+                          onTap: () => onSelect(ShellTab.myStore),
+                        ),
+                        _NavItem(
+                          icon: Icons.person_outline,
+                          activeIcon: Icons.person,
+                          label: 'Account',
+                          active: current == ShellTab.account,
+                          onTap: () => onSelect(ShellTab.account),
+                        ),
+                      ],
+                    ),
+                    Positioned(
+                      top: -22,
+                      left: 0,
+                      right: 0,
+                      child: Center(
+                        // Held to its own slot. The circle itself is narrower
+                        // than this; the constraint is for the label under it,
+                        // which must never reach into a neighbouring tab.
+                        child: SizedBox(
+                          width: slot,
+                          child: _AddButton(
+                            active: current == ShellTab.addListing,
+                            onTap: () => onSelect(ShellTab.addListing),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -363,6 +385,9 @@ class _AddButton extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               'Add Listing',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: NphFonts.body,
                 fontSize: 10,

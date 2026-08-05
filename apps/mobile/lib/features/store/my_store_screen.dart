@@ -47,15 +47,11 @@ class MyStoreScreen extends ConsumerWidget {
 
         const NphSectionHeader(title: 'Public store'),
         const SizedBox(height: NphSpacing.md),
+        _storeLink(context),
+        const SizedBox(height: NphSpacing.md),
         NphSettingsGroup(
           title: 'Buyers find you here',
           children: [
-            NphSettingsRow(
-              icon: Icons.link,
-              label: 'Store link',
-              value: store.slug.isEmpty ? 'Not assigned' : '/store/${store.slug}',
-              onTap: store.slug.isEmpty ? null : () => _copyLink(context),
-            ),
             NphSettingsRow(
               icon: Icons.visibility_outlined,
               label: 'Visible to buyers',
@@ -314,6 +310,71 @@ class MyStoreScreen extends ConsumerWidget {
           ],
         ),
       ],
+    );
+  }
+
+  /// The dealer's public address, shown in full.
+  ///
+  /// This deliberately does not live in the settings group below. A settings
+  /// row puts its value on the right of its label and ellipsises what does not
+  /// fit, so on a 320dp handset a real slug renders as
+  /// "naijapartshub.ng/store/ladipo-auto-sp…" — unreadable, uncopyable by eye,
+  /// and useless to a dealer writing it on a card or reading it down the phone.
+  /// Given its own full-width block the whole URL wraps and stays legible,
+  /// scheme included, which is what a buyer has to type.
+  Widget _storeLink(BuildContext context) {
+    final hasSlug = store.slug.isNotEmpty;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(NphSpacing.md),
+      decoration: BoxDecoration(
+        color: NphColors.card,
+        borderRadius: NphRadius.cardBorder,
+        border: Border.all(color: NphColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.link, size: 16, color: NphColors.mutedForeground),
+              const SizedBox(width: NphSpacing.xs),
+              const Text(
+                'Your store link',
+                style: TextStyle(
+                  fontFamily: NphFonts.body,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: NphColors.mutedForeground,
+                ),
+              ),
+              const Spacer(),
+              if (hasSlug)
+                // A tap target on the link block itself, so copying does not
+                // depend on finding the button pair further up the screen.
+                InkWell(
+                  onTap: () => _copyLink(context),
+                  borderRadius: NphRadius.buttonBorder,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    child: Icon(Icons.copy_rounded, size: 16, color: NphColors.orange),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: NphSpacing.xs),
+          SelectableText(
+            hasSlug ? _publicUrl : 'Not assigned until your store is approved',
+            style: TextStyle(
+              fontFamily: NphFonts.body,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: hasSlug ? NphColors.foreground : NphColors.mutedForeground,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

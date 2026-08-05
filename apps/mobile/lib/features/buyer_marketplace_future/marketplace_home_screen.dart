@@ -1,4 +1,4 @@
-﻿import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -11,7 +11,7 @@ import '../../models/store.dart';
 import 'marketplace_service.dart';
 import '../../widgets/listing_card.dart';
 
-/// The marketplace Home tab â€” where an approved dealer lands after sign-in.
+/// The marketplace Home tab — where an approved dealer lands after sign-in.
 ///
 /// Reads the public `listings` collection with `publiclyVisible == true`, the
 /// same filter the website uses and the same one the security rule requires.
@@ -129,7 +129,7 @@ class HomeScreen extends ConsumerWidget {
       crossAxisSpacing: NphSpacing.md,
       // Loosened from 0.95 to clear the enlarged icon tile. At three columns a
       // card is ~118 dp wide, and 58 tile + 8 gap + two label lines + padding
-      // needs ~125 dp of height â€” "Heavy Equipment" and "Motorcycle Parts" both
+      // needs ~125 dp of height — "Heavy Equipment" and "Motorcycle Parts" both
       // wrap, so the two-line case is the one that has to fit, not the one-line
       // case.
       childAspectRatio: 0.86,
@@ -217,7 +217,7 @@ class HomeScreen extends ConsumerWidget {
     }
   }
 
-  /// wa.me handoff â€” the same buyer-to-dealer path the website uses. Payment,
+  /// wa.me handoff — the same buyer-to-dealer path the website uses. Payment,
   /// negotiation and delivery all happen off-platform in Phase 1.
   Future<void> _contact(PublicListing item) async {
     final number = (item.store.whatsapp.isNotEmpty ? item.store.whatsapp : item.store.phone)
@@ -403,7 +403,7 @@ class _FeaturedCarouselState extends State<_FeaturedCarousel> {
                         height: 6,
                         decoration: BoxDecoration(
                           // Inactive dots are white-on-scrim, not the light
-                          // border grey â€” that colour is invisible against a
+                          // border grey — that colour is invisible against a
                           // photograph.
                           color: i == _page
                               ? NphColors.orange

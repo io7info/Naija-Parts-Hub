@@ -93,12 +93,40 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
   bool _busy = false;
   String? _error;
 
+  /// The id this listing will have, reserved before anything is written.
+  ///
+  /// Photos upload straight to `stores/{uid}/listings/{_listingId}/...`, which
+  /// is where they belong once the document exists — so nothing has to be moved
+  /// on save, and every object is attributable to a listing even before that
+  /// listing is created.
+  ///
+  /// Resolved in initState, not lazily: a `late final` initialiser runs on
+  /// first *access*, which put a Firestore call inside the upload path and made
+  /// a backend failure look like a failed photo.
+  late final String _listingId;
+
+  /// Captured in initState so [dispose] can still reach it.
+  ///
+  /// Riverpod throws "Cannot use ref after the widget was disposed" for any
+  /// `ref.read` during dispose — so reading the service there broke the orphan
+  /// cleanup in precisely the case it exists for: a form the dealer abandoned
+  /// after uploading photos.
+  late final ImageUploadService _uploads;
+
+  /// Set once the work is safely in Firestore. Guards the dispose-time cleanup:
+  /// a saved listing's photos must obviously survive.
+  bool _saved = false;
+
   bool get _isEdit => widget.existing != null;
   bool get _uploading => _slots.any((s) => s.isUploading);
 
   @override
   void initState() {
     super.initState();
+
+    _uploads = ref.read(imageUploadServiceProvider);
+    _listingId =
+        widget.existing?.listingId ?? ref.read(listingServiceProvider).newListingId();
 
     final existing = widget.existing;
     if (existing != null) {
@@ -146,12 +174,38 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
 
   @override
   void dispose() {
+    _cleanUpAbandonedUploads();
     for (final c in _controllers) {
       c.removeListener(_markDirty);
       c.dispose();
     }
     _scroll.dispose();
     super.dispose();
+  }
+
+  /// Deletes photos uploaded for a listing that was never saved.
+  ///
+  /// A dealer can pick three photos, wait for them to upload, then discard the
+  /// form — via the tab-change guard, the back gesture, or by killing the app.
+  /// Those objects are referenced by nothing and would sit in Storage forever,
+  /// billed and unreachable.
+  ///
+  /// Runs from dispose, so it cannot be awaited. Fire-and-forget is right here:
+  /// nothing depends on the result, and the paths are captured synchronously
+  /// before the State goes away. Storage rules already restrict deletion to
+  /// `stores/{uid}/...`, so a stale call cannot touch another dealer's objects.
+  ///
+  /// Skipped entirely in edit mode: those photos belong to a listing that
+  /// exists, and removing one is an explicit action with its own delete call.
+  void _cleanUpAbandonedUploads() {
+    if (_saved || _isEdit) return;
+
+    final orphans = _slots.where((s) => s.isDone).map((s) => s.uploaded!.path).toList();
+    if (orphans.isEmpty) return;
+
+    for (final path in orphans) {
+      unawaited(_uploads.deleteAt(path));
+    }
   }
 
   /// True only when Firestore is serving from cache — i.e. we know we are
@@ -165,7 +219,7 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
   Future<void> _addImage({required bool fromCamera}) async {
     if (_slots.length >= ImageUploadService.maxImages) return;
 
-    final picked = await ref.read(imageUploadServiceProvider).pick(fromCamera: fromCamera);
+    final picked = await _uploads.pick(fromCamera: fromCamera);
     if (picked == null) return;
 
     final slot = _Slot(local: picked, progress: 0);
@@ -184,9 +238,9 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
     setState(() => _slots[index] = _Slot(local: slot.local, progress: 0));
 
     try {
-      final image = await ref.read(imageUploadServiceProvider).upload(
+      final image = await _uploads.upload(
             storeId: widget.storeId,
-            listingId: widget.existing?.listingId ?? 'drafts',
+            listingId: _listingId,
             source: slot.local!,
             onProgress: (p) {
               if (!mounted) return;
@@ -213,7 +267,7 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
     // Best-effort: an orphaned object costs storage, but blocking the dealer on
     // a delete that may fail offline costs them the edit.
     if (slot.uploaded != null) {
-      await ref.read(imageUploadServiceProvider).deleteAt(slot.uploaded!.path);
+      await _uploads.deleteAt(slot.uploaded!.path);
     }
   }
 
@@ -277,6 +331,8 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
       } else {
         listingId = await service.createDraft(
           storeId: widget.storeId,
+          // The id the photos were already uploaded under.
+          listingId: _listingId,
           name: _name.text.trim(),
           categoryId: _category!,
           condition: _condition,
@@ -292,6 +348,9 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
       }
 
       if (publish) await service.publish(listingId);
+
+      // The document now owns these objects; dispose must not delete them.
+      _saved = true;
 
       if (!mounted) return;
       messenger.showSnackBar(
@@ -522,7 +581,11 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
                     controller: _model,
                     textInputAction: TextInputAction.next,
                     textCapitalization: TextCapitalization.words,
-                    decoration: const InputDecoration(hintText: 'Corolla 2017'),
+                    // Model only. The old "Corolla 2017" placeholder invited
+                    // dealers to type a year into a field the contract has no
+                    // year in, so the value ended up embedded in the model
+                    // string and unusable as a filter.
+                    decoration: const InputDecoration(hintText: 'Corolla'),
                   ),
                 ),
               ),
@@ -826,7 +889,15 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
       );
     }
     if (slot.local != null) {
-      return Image.file(File(slot.local!.path), fit: BoxFit.cover);
+      return Image.file(
+        File(slot.local!.path),
+        fit: BoxFit.cover,
+        // Android can purge the camera/gallery cache entry out from under us
+        // between picking and rendering. Without this the decode throws and
+        // takes the form down; a muted tile keeps the slot — and its Retry —
+        // usable.
+        errorBuilder: (_, __, ___) => Container(color: NphColors.muted),
+      );
     }
     return Container(color: NphColors.muted);
   }

@@ -158,13 +158,22 @@ class NphStatusBadge extends StatelessWidget {
             Icon(icon, size: 12, color: c.fg),
             const SizedBox(width: 3),
           ],
-          Text(
-            label,
-            style: TextStyle(
-              fontFamily: NphFonts.body,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: c.fg,
+          // Flexible, because mainAxisSize.min does not mean "fits": the Row
+          // still asks the Text for its natural width, and a long label such as
+          // "Verified dealer" overflowed the identity card by 14 px on a 320 dp
+          // handset. Ellipsis is the right degradation — the tone colour still
+          // carries the meaning.
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: NphFonts.body,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: c.fg,
+              ),
             ),
           ),
         ],
@@ -195,13 +204,17 @@ class NphVerifiedBadge extends StatelessWidget {
         children: [
           Icon(Icons.verified_outlined, size: compact ? 12 : 14, color: NphColors.success),
           const SizedBox(width: 3),
-          Text(
-            'Verified',
-            style: TextStyle(
-              fontFamily: NphFonts.body,
-              fontSize: compact ? 11 : 12,
-              fontWeight: FontWeight.w600,
-              color: NphColors.success,
+          Flexible(
+            child: Text(
+              'Verified',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: NphFonts.body,
+                fontSize: compact ? 11 : 12,
+                fontWeight: FontWeight.w600,
+                color: NphColors.success,
+              ),
             ),
           ),
         ],
@@ -927,11 +940,43 @@ class NphEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Scrollable, not a bare Center.
+    //
+    // Empty states sit inside panes of fixed height — a TabBarView beneath a
+    // header and above the nav bar. On a 320 dp handset that leaves under
+    // 280 dp, and the icon, title, wrapped message and action button together
+    // overflowed it by 155 px. A vertical overflow leaves the subtree
+    // un-laid-out, which breaks hit testing for the entire screen, so this is
+    // not a cosmetic concern.
+    //
+    // The ConstrainedBox keeps the content vertically centred while it fits,
+    // and lets it scroll once it does not — which is also what saves this at
+    // 2.0x text scale.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Unbounded height means this is inside a scrollable already — the
+        // dashboard renders an empty state as one item in a ListView. Wrapping
+        // it in a second scroll view there would ask a ConstrainedBox for an
+        // infinite minHeight, which is not a layout so much as a hang.
+        if (!constraints.hasBoundedHeight) return _content(context);
+
+        return SingleChildScrollView(
+          physics: const ClampingScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: _content(context),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _content(BuildContext context) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: NphSpacing.xxl,
-          vertical: 48,
+          vertical: NphSpacing.xxl,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -947,7 +992,11 @@ class NphEmptyState extends StatelessWidget {
               child: Icon(icon, size: 28, color: NphColors.mutedForeground),
             ),
             const SizedBox(height: NphSpacing.lg),
-            Text(title, style: Theme.of(context).textTheme.titleLarge, textAlign: TextAlign.center),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleLarge,
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: NphSpacing.xs),
             Text(
               message,

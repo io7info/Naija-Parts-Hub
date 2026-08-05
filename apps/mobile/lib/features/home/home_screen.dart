@@ -76,6 +76,13 @@ class HomeScreen extends ConsumerWidget {
             ),
             child: _planCard(context, ref),
           ),
+          if (store.subscription.hasExpired || store.subscription.inGrace) ...[
+            const SizedBox(height: NphSpacing.lg),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: NphSpacing.appPage),
+              child: _subscriptionBanner(context),
+            ),
+          ],
           const SizedBox(height: NphSpacing.xl),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: NphSpacing.appPage),
@@ -246,6 +253,34 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
+  /// Subscription lapse, stated in terms of what it does to their listings.
+  ///
+  /// Grace and expired are genuinely different situations: in grace the stock
+  /// is still live and the dealer has time; once expired the backend has
+  /// already dropped them to the free allowance and unpublished the excess. A
+  /// single "subscription problem" message would hide that.
+  Widget _subscriptionBanner(BuildContext context) {
+    final expired = store.subscription.hasExpired;
+    return NphBanner(
+      message: expired
+          ? 'Your plan has expired. Listings above the free limit of '
+              '${store.activeListingLimit} have been unpublished — renew on the '
+              'website to put them back.'
+          : 'Your plan has lapsed. Your listings are still live for now. Renew '
+              'on the website to keep them published.',
+      tone: expired ? NphTone.error : NphTone.warning,
+      icon: expired ? Icons.error_outline : Icons.schedule,
+      trailing: TextButton(
+        onPressed: _openPlansPage,
+        style: TextButton.styleFrom(
+          foregroundColor: expired ? NphColors.error : NphColors.warning,
+          padding: const EdgeInsets.symmetric(horizontal: NphSpacing.sm),
+        ),
+        child: const Text('Renew'),
+      ),
+    );
+  }
+
   Future<void> _openPlansPage() async {
     final uri = Uri.parse('${Env.marketplaceOrigin}/plans');
     if (await canLaunchUrl(uri)) {
@@ -290,20 +325,46 @@ class HomeScreen extends ConsumerWidget {
     required int archived,
     required int total,
   }) {
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: NphSpacing.md,
-      crossAxisSpacing: NphSpacing.md,
-      childAspectRatio: 1.55,
-      children: [
-        _StatCard(icon: Icons.check_circle_outline, value: '$active', label: 'Active Listings'),
-        _StatCard(icon: Icons.edit_note, value: '$drafts', label: 'Draft Listings'),
-        _StatCard(icon: Icons.inventory_2_outlined, value: '$archived', label: 'Archived Listings'),
-        _StatCard(icon: Icons.widgets_outlined, value: '$total', label: 'Total Products'),
-      ],
-    );
+    return _twoColumn([
+      _StatCard(icon: Icons.check_circle_outline, value: '$active', label: 'Active Listings'),
+      _StatCard(icon: Icons.edit_note, value: '$drafts', label: 'Draft Listings'),
+      _StatCard(icon: Icons.inventory_2_outlined, value: '$archived', label: 'Archived Listings'),
+      _StatCard(icon: Icons.widgets_outlined, value: '$total', label: 'Total Products'),
+    ]);
+  }
+
+  /// Two-column grid whose rows size to their content.
+  ///
+  /// Deliberately not GridView with `childAspectRatio`: that derives cell
+  /// HEIGHT from cell WIDTH, so the same ratio that fits a 400 dp handset
+  /// clips on a 320 dp one — measured at 24 px of overflow — and clips far
+  /// worse at large text scale, where the content grows and the cell does not.
+  ///
+  /// IntrinsicHeight costs an extra layout pass per row. At two rows of two
+  /// that is irrelevant, and it buys a layout that cannot overflow at any
+  /// width or text scale.
+  Widget _twoColumn(List<Widget> cards) {
+    final rows = <Widget>[];
+    for (var i = 0; i < cards.length; i += 2) {
+      final left = cards[i];
+      final right = i + 1 < cards.length ? cards[i + 1] : null;
+      rows.add(
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: left),
+              const SizedBox(width: NphSpacing.md),
+              // An empty Expanded rather than nothing, so an odd final card
+              // keeps its column width instead of stretching across the row.
+              Expanded(child: right ?? const SizedBox.shrink()),
+            ],
+          ),
+        ),
+      );
+      if (i + 2 < cards.length) rows.add(const SizedBox(height: NphSpacing.md));
+    }
+    return Column(children: rows);
   }
 
   // --- Quick actions -------------------------------------------------------
@@ -335,39 +396,31 @@ class HomeScreen extends ConsumerWidget {
       children: [
         const NphSectionHeader(title: 'Quick Actions'),
         const SizedBox(height: NphSpacing.md),
-        GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: NphSpacing.md,
-          crossAxisSpacing: NphSpacing.md,
-          childAspectRatio: 2.35,
-          children: [
-            for (final (icon, label, onTap) in actions)
-              NphCard(
-                onTap: onTap,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: NphSpacing.md),
-                child: Row(
-                  children: [
-                    Icon(icon, size: 20, color: NphColors.orange),
-                    const SizedBox(width: NphSpacing.sm),
-                    Expanded(
-                      child: Text(
-                        label,
-                        style: const TextStyle(
-                          fontFamily: NphFonts.body,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          height: 1.25,
-                          color: NphColors.foreground,
-                        ),
+        _twoColumn([
+          for (final (icon, label, onTap) in actions)
+            NphCard(
+              onTap: onTap,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: NphSpacing.md),
+              child: Row(
+                children: [
+                  Icon(icon, size: 20, color: NphColors.orange),
+                  const SizedBox(width: NphSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: const TextStyle(
+                        fontFamily: NphFonts.body,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        height: 1.25,
+                        color: NphColors.foreground,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-          ],
-        ),
+            ),
+        ]),
       ],
     );
   }
@@ -457,7 +510,10 @@ class _StatCard extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             NphIconTile(icon: icon),
-            const Spacer(),
+            // Fixed gap, not a Spacer. Spacer is an Expanded, which demands a
+            // bounded height — fine in a fixed-ratio grid cell, an error now
+            // that the card sizes to its own content.
+            const SizedBox(height: NphSpacing.md),
             Text(
               value,
               style: const TextStyle(

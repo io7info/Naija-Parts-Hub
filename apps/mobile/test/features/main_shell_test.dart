@@ -3,11 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:naija_parts_hub/design/theme.dart';
 import 'package:naija_parts_hub/features/shell/main_shell.dart';
-import 'package:naija_parts_hub/models/listing.dart';
 import 'package:naija_parts_hub/models/store.dart';
-import 'package:naija_parts_hub/services/categories_service.dart';
-import 'package:naija_parts_hub/services/listing_service.dart';
-import 'package:naija_parts_hub/services/sync_status_service.dart';
+
+import '../support/test_providers.dart';
 
 /// Shell rendering and navigation.
 ///
@@ -41,16 +39,7 @@ Store _store({
 
 Widget _app(Store store, {List<Override> overrides = const []}) {
   return ProviderScope(
-    overrides: [
-      myListingsProvider.overrideWith((ref) => Stream.value(const <Listing>[])),
-      categoriesProvider.overrideWith((ref) => Stream.value(const <Category>[])),
-      syncStatusProvider.overrideWith(
-        (ref) => Stream.value(
-          const SyncSnapshot(state: SyncState.synced, pendingCount: 0),
-        ),
-      ),
-      ...overrides,
-    ],
+    overrides: [...commonOverrides(), ...overrides],
     child: MaterialApp(
       theme: buildNphTheme(),
       home: MainShell(store: store),
@@ -208,27 +197,34 @@ void main() {
   });
 
   group('pane state is preserved', () {
-    testWidgets('a half-filled Add Listing form survives a tab round trip', (tester) async {
+    testWidgets('a search term survives a tab round trip', (tester) async {
       await tester.pumpWidget(_app(_store()));
       await tester.pump();
 
-      await tester.tap(find.text('Add Listing'));
+      await tester.tap(find.text('Listings'));
       await tester.pumpAndSettle();
 
-      // The first field in the form is Part name. Found by position rather than
-      // by label text, because NphField renders the label as a sibling widget,
-      // not as content inside the field.
-      await tester.enterText(find.byType(TextFormField).first, 'Toyota Corolla Brake Pad');
+      // Scoped to the search field by its hint: an IndexedStack has every pane
+      // built at once, so `find.byType(TextField)` would also match the Add
+      // Listing form's fields sitting behind this one.
+      final search = find.widgetWithText(
+        TextField,
+        'Search your listings by name, SKU or brand',
+      );
+      await tester.enterText(search, 'brake');
       await tester.pump();
 
       // Away and back. An IndexedStack keeps the State; a Navigator per tab
-      // would not, which is the bug this guards.
+      // would not, which is the bug this guards. Listings is used rather than
+      // Add Listing because leaving a dirty form raises the discard prompt —
+      // that guard is asserted in listing_form_test.dart, and its barrier would
+      // silently swallow the tap that comes back.
       await tester.tap(find.text('Home'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Add Listing'));
+      await tester.tap(find.text('Listings'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Toyota Corolla Brake Pad'), findsOneWidget,
+      expect(find.text('brake'), findsOneWidget,
           reason: 'switching tabs must not discard a dealer\'s work');
     });
   });
