@@ -3,23 +3,34 @@
 import Link from 'next/link'
 import { Search, Mic, X, PackageSearch } from 'lucide-react'
 import {
-  Car,
-  Bike,
-  Truck,
-  Tractor,
-  Forklift,
+  Cog,
+  Disc,
+  Waves,
   Zap,
+  Car,
+  Settings2,
+  Filter,
+  Wrench,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
+/**
+ * Named so the category list stays a plain data structure.
+ *
+ * Only the icons the part categories in lib/marketplace.ts actually ask for —
+ * lucide-react has well over a thousand, and importing them by name is what
+ * keeps the rest out of the bundle.
+ */
 const iconMap: Record<string, LucideIcon> = {
-  Car,
-  Bike,
-  Truck,
-  Tractor,
-  Forklift,
+  Cog,
+  Disc,
+  Waves,
   Zap,
+  Car,
+  Settings2,
+  Filter,
+  Wrench,
 }
 
 export function CategoryCard({

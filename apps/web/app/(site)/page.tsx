@@ -102,14 +102,18 @@ export default async function WebHomePage() {
       <section className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
         <div className="flex items-end justify-between">
           <div>
-            <h2 className="font-heading text-2xl font-semibold text-foreground">Popular Categories</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Browse parts by vehicle and machinery type.</p>
+            <h2 className="font-heading text-2xl font-semibold text-foreground">Shop by part category</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              The same categories dealers file their parts under.
+            </p>
           </div>
           <Link href="/parts" className="hidden text-sm font-semibold text-orange hover:text-orange-hover sm:inline">
             View all parts
           </Link>
         </div>
-        <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+        {/* Eight categories, so four across rather than the six the vehicle-type
+            tiles used — two even rows beat one row of eight narrow tiles. */}
+        <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-4">
           {categories.map((c) => (
             <CategoryCard key={c.id} label={c.label} icon={c.icon} href={`/parts?category=${c.id}`} />
           ))}

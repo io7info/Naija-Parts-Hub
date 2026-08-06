@@ -23,11 +23,20 @@ import { getFirestore, doc, setDoc, getDoc, connectFirestoreEmulator } from 'fir
  */
 
 const PROJECT_ID = 'demo-naija-parts-hub';
-const REGION = 'europe-west1';
-const HOST = '127.0.0.1';
+// From the contract, so this suite fails the moment the deployed region and
+// the client's expectation diverge — which in production is a 404 per callable.
+const { FUNCTIONS_REGION: REGION } = await import('@nph/contracts');
+import { emulatorTarget } from './helpers.mjs';
 
-process.env.FIRESTORE_EMULATOR_HOST ??= `${HOST}:8080`;
-process.env.FIREBASE_AUTH_EMULATOR_HOST ??= `${HOST}:9099`;
+// Follow whatever ports emulators:exec was launched with; see helpers.mjs.
+const FIRESTORE = emulatorTarget('FIRESTORE_EMULATOR_HOST', 8080);
+const AUTH = emulatorTarget('FIREBASE_AUTH_EMULATOR_HOST', 9099);
+// The CLI exports no variable for the functions port, so this one is explicit.
+const FUNCTIONS_PORT = Number(process.env.FUNCTIONS_EMULATOR_PORT) || 5001;
+const HOST = FIRESTORE.host;
+
+process.env.FIRESTORE_EMULATOR_HOST ??= `${FIRESTORE.host}:${FIRESTORE.port}`;
+process.env.FIREBASE_AUTH_EMULATOR_HOST ??= `${AUTH.host}:${AUTH.port}`;
 
 let adminApp;
 let adminAuth;
@@ -47,11 +56,11 @@ before(async () => {
 
   clientApp = initializeApp({ projectId: PROJECT_ID, apiKey: 'demo-key' }, 'e2e-client');
   clientAuth = getAuth(clientApp);
-  connectAuthEmulator(clientAuth, `http://${HOST}:9099`, { disableWarnings: true });
+  connectAuthEmulator(clientAuth, `http://${AUTH.host}:${AUTH.port}`, { disableWarnings: true });
   clientDb = getFirestore(clientApp);
-  connectFirestoreEmulator(clientDb, HOST, 8080);
+  connectFirestoreEmulator(clientDb, FIRESTORE.host, FIRESTORE.port);
   fns = getFunctions(clientApp, REGION);
-  connectFunctionsEmulator(fns, HOST, 5001);
+  connectFunctionsEmulator(fns, HOST, FUNCTIONS_PORT);
 
   // Clean slate.
   for (const c of ['stores', 'listings', 'storeSlugs', 'adminActions']) {

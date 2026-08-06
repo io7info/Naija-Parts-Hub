@@ -16,6 +16,7 @@
 import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+import { LISTING_CATEGORIES } from '@nph/contracts';
 
 const PROJECT_ID = process.env.GCLOUD_PROJECT ?? 'demo-naija-parts-hub';
 
@@ -67,16 +68,10 @@ async function ensureAdmin() {
   console.log(`  password: ${ADMIN_PASSWORD}`);
 }
 
-const CATEGORIES = [
-  ['engine', 'Engine', 1],
-  ['brake', 'Brake', 2],
-  ['suspension', 'Suspension', 3],
-  ['electrical', 'Electrical', 4],
-  ['body', 'Body', 5],
-  ['transmission', 'Transmission', 6],
-  ['filters', 'Filters', 7],
-  ['other', 'Other', 8],
-];
+// From the contract, so the emulator and production hold the same taxonomy.
+// A category that exists only locally is a listing form that works in
+// development and offers nothing in production.
+const CATEGORIES = LISTING_CATEGORIES.map((c) => [c.id, c.name, c.order]);
 
 async function seedCategories() {
   const batch = db.batch();

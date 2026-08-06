@@ -222,6 +222,82 @@ describe('listings', () => {
         dealerListingCreate({ images: [{}, {}, {}, {}] })));
   });
 
+  // -----------------------------------------------------------------------
+  // Create-time field allowlist.
+  //
+  // `validListingPayload` checks the fields it knows about and says nothing
+  // about any others, so before the allowlist a dealer could post a perfectly
+  // valid draft that also carried backend-owned fields. The update rule has
+  // always blocked those; create did not.
+  //
+  // `createdAt` is the one that mattered most: the trigger only backfilled a
+  // *missing* value, so a forged future timestamp survived and pinned that
+  // listing above every legitimate result in each `createdAt desc` query.
+  // -----------------------------------------------------------------------
+  describe('create rejects backend-owned fields', () => {
+    const forged = {
+      publiclyVisible: true,
+      searchTokens: ['toyota', 'honda', 'brake'],
+      moderation: { removed: false, removedBy: null, removedReason: null, removedAt: null },
+      createdAt: new Date('2099-01-01'),
+      publishedAt: new Date(),
+      storeApproved: true,
+      storeVisible: true,
+      storeSlug: 'someone-elses-store',
+      storeBusinessName: 'Not My Store',
+      storeState: 'Lagos',
+      storeCity: 'Ikeja',
+      storePhone: '+2348000000000',
+      storeWhatsapp: '+2348000000000',
+    };
+
+    for (const [field, value] of Object.entries(forged)) {
+      it(`rejects a draft carrying ${field}`, async () => {
+        await assertFails(
+          setDoc(doc(dealer(env, 'dealer-1'), 'listings/l1'),
+            dealerListingCreate({ [field]: value })));
+      });
+    }
+
+    it('rejects a draft carrying an unknown field', async () => {
+      await assertFails(
+        setDoc(doc(dealer(env, 'dealer-1'), 'listings/l1'),
+          dealerListingCreate({ sponsoredRank: 1 })));
+    });
+
+    it('rejects a draft carrying every forged field at once', async () => {
+      await assertFails(
+        setDoc(doc(dealer(env, 'dealer-1'), 'listings/l1'),
+          dealerListingCreate(forged)));
+    });
+
+    // hasOnly is a subset test, not equality, so a shorter payload is fine as
+    // far as the allowlist is concerned.
+    //
+    // updatedAt is the field to prove it with: validListingPayload does not
+    // check it, whereas it reads brand, partNumber and the compatibility
+    // fields directly — and a bare property access on a missing key raises,
+    // which denies. Those must therefore be present as empty strings, which is
+    // what the Flutter client sends. That is unchanged by the allowlist.
+    it('accepts a draft with updatedAt omitted', async () => {
+      const payload = dealerListingCreate();
+      delete payload.updatedAt;
+      await assertSucceeds(
+        setDoc(doc(dealer(env, 'dealer-1'), 'listings/l2'), payload));
+    });
+
+    // The forged draft is denied, so there is nothing to become visible. This
+    // asserts the outcome rather than the mechanism: a rule that failed open
+    // would leave a publiclyVisible document a visitor could read.
+    it('a rejected forged draft never becomes publicly readable', async () => {
+      await assertFails(
+        setDoc(doc(dealer(env, 'dealer-1'), 'listings/forged'),
+          dealerListingCreate({ publiclyVisible: true })));
+
+      await assertFails(getDoc(doc(visitor(env), 'listings/forged')));
+    });
+  });
+
   it('rejects self-publishing by update', async () => {
     await seed(env, (db) => setDoc(doc(db, 'listings/l1'), listingDoc()));
     await assertFails(

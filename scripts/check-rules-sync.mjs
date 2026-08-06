@@ -98,6 +98,67 @@ assertDisjoint(
   'LISTING_BACKEND_FIELDS', contracts.LISTING_BACKEND_FIELDS,
 );
 
+// ---------------------------------------------------------------------------
+// The Cloud Functions region.
+//
+// A callable resolves to `https://<region>-<project>.cloudfunctions.net/<name>`,
+// so a client that disagrees with the deployment gets a 404 on every call —
+// registration, publishing, deletion, all of it — and the error reads like a
+// missing function rather than a misconfigured region.
+//
+// The TypeScript callers import the constant and cannot drift. Dart cannot, so
+// apps/mobile mirrors it by hand, which is exactly the case this file exists
+// for.
+// ---------------------------------------------------------------------------
+
+const REGION_MIRRORS = [
+  {
+    label: 'apps/mobile/lib/core/env.dart',
+    file: 'apps/mobile/lib/core/env.dart',
+    // String.fromEnvironment('FUNCTIONS_REGION', defaultValue: '<region>')
+    pattern: /FUNCTIONS_REGION'\s*,\s*defaultValue:\s*'([a-z0-9-]+)'/,
+  },
+];
+
+for (const mirror of REGION_MIRRORS) {
+  const source = readFileSync(join(root, mirror.file), 'utf8');
+  const found = source.match(mirror.pattern)?.[1];
+
+  if (!found) {
+    failures++;
+    console.error(`✗ could not find the region constant in ${mirror.label}`);
+  } else if (found !== contracts.FUNCTIONS_REGION) {
+    failures++;
+    console.error(
+      `✗ ${mirror.label} targets "${found}" but FUNCTIONS_REGION is "${contracts.FUNCTIONS_REGION}"`,
+    );
+  } else {
+    console.log(`✓ ${'functions region'.padEnd(22)} ${found} in sync with ${mirror.label}`);
+  }
+}
+
+// A stale region literal left anywhere else is the same bug wearing a
+// different hat, so no source file may hardcode one.
+const REGION_LITERALS = /'(?:europe|us|asia|australia|northamerica|southamerica)-[a-z]+[0-9]'/;
+const SCANNED = [
+  'functions/src/index.ts',
+  'apps/web/lib/firebase-config.ts',
+  'firebase/tests/e2e.test.mjs',
+];
+
+for (const file of SCANNED) {
+  const source = readFileSync(join(root, file), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+  const literal = source.match(REGION_LITERALS)?.[0];
+  if (literal) {
+    failures++;
+    console.error(`✗ ${file} hardcodes ${literal} — import FUNCTIONS_REGION instead`);
+  } else {
+    console.log(`✓ ${'no region literal'.padEnd(22)} ${file}`);
+  }
+}
+
 if (failures > 0) {
   console.error(`\n${failures} check(s) failed — rules and contracts have drifted.`);
   process.exit(1);

@@ -27,12 +27,15 @@
     "test:limit": "npm run test:limit --workspace @nph/firebase-tests",
     "test:storage": "npm run test:storage --workspace @nph/firebase-tests",
     "test:offline": "npm run test:offline --workspace @nph/firebase-tests",
+    "test:triggers": "npm run test:triggers --workspace @nph/firebase-tests",
     "test:emulator": "npm run test --workspace @nph/firebase-tests",
     "admin": "npm run admin --workspace @nph/functions --",
     "test:admin-routes": "npm run test:admin-routes --workspace @nph/firebase-tests",
     "check:binaries": "node scripts/check-binary-integrity.mjs",
     "test:mobile-env": "cd apps/mobile && flutter test test/core/env_switch_test.dart && flutter test test/core/env_switch_test.dart --dart-define=USE_FIREBASE_EMULATOR=false",
     "seed:marketplace": "npm run seed:marketplace --workspace @nph/functions",
+    "seed:prod-categories": "npm run seed:prod-categories --workspace @nph/functions --",
+    "bootstrap:prod-admin": "npm run bootstrap:prod-admin --workspace @nph/functions --",
     "test:admin-data": "npm run test:admin-data --workspace @nph/firebase-tests"
   },
   "devDependencies": {

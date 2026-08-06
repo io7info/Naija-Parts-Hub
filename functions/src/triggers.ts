@@ -1,6 +1,12 @@
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
-import { computePubliclyVisible, generateSearchTokens, type Listing, type Store } from '@nph/contracts';
-import { Timestamp, db } from './lib/admin';
+import {
+  LISTING_BACKEND_FIELDS,
+  computePubliclyVisible,
+  generateSearchTokens,
+  type Listing,
+  type Store,
+} from '@nph/contracts';
+import { FieldValue, Timestamp, db } from './lib/admin';
 
 /**
  * Firestore triggers maintaining the backend-controlled fields.
@@ -10,6 +16,44 @@ import { Timestamp, db } from './lib/admin';
  * stuff search tokens or flip themselves visible.
  */
 
+/** The state every listing starts in. Only adminModerateListing changes it. */
+const defaultModeration = (): Listing['moderation'] => ({
+  removed: false,
+  removedBy: null,
+  removedReason: null,
+  removedAt: null,
+});
+
+/**
+ * Backend fields this trigger derives on every write, so a forged value is
+ * overwritten rather than deleted. `status` is excluded because the create rule
+ * already pins it to 'draft' and publishListing owns it thereafter.
+ */
+const DERIVED_ON_WRITE = new Set<string>([
+  'status',
+  'searchTokens',
+  'publiclyVisible',
+  'storeApproved',
+  'storeVisible',
+  'storeSlug',
+  'storeBusinessName',
+  'storeState',
+  'storeCity',
+  'storePhone',
+  'storeWhatsapp',
+  'moderation',
+  'createdAt',
+]);
+
+/**
+ * Backend fields that must not survive a create — anything backend-owned that
+ * the trigger does not itself assign. Derived from the contract rather than
+ * listed by hand, so a new backend field is covered the day it is added.
+ *
+ * Today this is exactly `publishedAt`.
+ */
+const STRIPPED_ON_CREATE = LISTING_BACKEND_FIELDS.filter((f) => !DERIVED_ON_WRITE.has(f));
+
 /**
  * Backfills a newly created draft and keeps derived fields correct on edit.
  *
@@ -17,27 +61,36 @@ import { Timestamp, db } from './lib/admin';
  * that is all the security rules permit — so searchTokens, moderation defaults,
  * the denormalized store fields and publiclyVisible are all filled in here.
  *
+ * Create and update are treated differently, and the distinction is the whole
+ * security property. On create every field arrived from the client, so no
+ * backend-owned value may be trusted: `createdAt` and `moderation` are forced,
+ * and anything else backend-owned is deleted. On update the stored values are
+ * already backend-owned — the rules forbid a dealer touching them — so they are
+ * preserved. Forcing them on every write instead would reset `createdAt` on
+ * each edit (destroying marketplace ordering) and reset `moderation` to its
+ * default immediately after an admin removed a listing, quietly putting it
+ * back on the marketplace.
+ *
  * Recursion guard: this trigger writes back to the same document, so it must
  * compare before writing and return early when nothing changed. Without that,
- * every write re-triggers itself indefinitely.
+ * every write re-triggers itself indefinitely. The create branch always writes
+ * (it sets createdAt), but its own write arrives as an update, where the
+ * comparison finds nothing left to do.
  */
 export const onListingWritten = onDocumentWritten('listings/{listingId}', async (event) => {
   const after = event.data?.after;
   if (!after?.exists) return; // deleted
 
+  const isCreate = !event.data?.before?.exists;
   const listing = after.data() as Listing;
   const listingId = after.id;
+  const raw = listing as unknown as Record<string, unknown>;
 
   // A listing whose store we cannot resolve stays invisible.
   const storeSnap = await db.collection('stores').doc(listing.storeId).get();
   const store = storeSnap.exists ? (storeSnap.data() as Store) : null;
 
-  const moderation = listing.moderation ?? {
-    removed: false,
-    removedBy: null,
-    removedReason: null,
-    removedAt: null,
-  };
+  const moderation = isCreate ? defaultModeration() : (listing.moderation ?? defaultModeration());
 
   const desired = {
     searchTokens: generateSearchTokens(listing.name, listing.brand, listing.partNumber),
@@ -61,15 +114,26 @@ export const onListingWritten = onDocumentWritten('listings/{listingId}', async 
 
   const patch: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(desired)) {
-    const existing = (listing as unknown as Record<string, unknown>)[key];
-    if (JSON.stringify(existing) !== JSON.stringify(value)) {
+    if (JSON.stringify(raw[key]) !== JSON.stringify(value)) {
       patch[key] = value;
     }
   }
   if (listing.publiclyVisible !== publiclyVisible) {
     patch.publiclyVisible = publiclyVisible;
   }
-  if (!listing.createdAt) {
+
+  if (isCreate) {
+    // Unconditional, overwriting whatever the client sent. A forged future
+    // timestamp would otherwise survive for the life of the listing and pin it
+    // above every legitimate result in each `createdAt desc` query.
+    patch.createdAt = Timestamp.now();
+
+    for (const field of STRIPPED_ON_CREATE) {
+      if (raw[field] !== undefined) patch[field] = FieldValue.delete();
+    }
+  } else if (!listing.createdAt) {
+    // Backfill only. Listings created before this trigger existed have no
+    // createdAt, and re-stamping on every edit would reorder the marketplace.
     patch.createdAt = Timestamp.now();
   }
 

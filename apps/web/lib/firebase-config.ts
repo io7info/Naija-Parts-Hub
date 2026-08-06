@@ -47,8 +47,15 @@ export const EMULATOR_PROJECT_ID = 'demo-naija-parts-hub'
  */
 export const useEmulators = process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS === 'true'
 
-/** Must match setGlobalOptions({ region }) in functions/src/index.ts. */
-export const FUNCTIONS_REGION = 'europe-west1'
+/**
+ * Re-exported rather than redeclared.
+ *
+ * A callable resolves to `https://<region>-<project>.cloudfunctions.net/<name>`,
+ * so a client pointed at the wrong region gets a 404 that reads like a missing
+ * function rather than a misconfiguration. Sharing the constant with
+ * functions/src/index.ts is what makes that impossible.
+ */
+export { FUNCTIONS_REGION } from '@nph/contracts'
 
 export type FirebaseClientConfig = {
   apiKey: string

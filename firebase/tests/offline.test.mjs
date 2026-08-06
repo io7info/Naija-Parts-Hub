@@ -42,11 +42,16 @@ import {
  */
 
 const PROJECT_ID = 'demo-naija-parts-hub';
-const HOST = '127.0.0.1';
+import { emulatorTarget } from './helpers.mjs';
+
+// Follow whatever ports emulators:exec was launched with; see helpers.mjs.
+const FIRESTORE = emulatorTarget('FIRESTORE_EMULATOR_HOST', 8080);
+const AUTH = emulatorTarget('FIREBASE_AUTH_EMULATOR_HOST', 9099);
+const HOST = FIRESTORE.host;
 const DEALER_UID = 'offline-dealer';
 
-process.env.FIRESTORE_EMULATOR_HOST ??= `${HOST}:8080`;
-process.env.FIREBASE_AUTH_EMULATOR_HOST ??= `${HOST}:9099`;
+process.env.FIRESTORE_EMULATOR_HOST ??= `${FIRESTORE.host}:${FIRESTORE.port}`;
+process.env.FIREBASE_AUTH_EMULATOR_HOST ??= `${AUTH.host}:${AUTH.port}`;
 
 let adminApp;
 let app;
@@ -86,9 +91,9 @@ before(async () => {
 
   app = initializeApp({ projectId: PROJECT_ID, apiKey: 'demo-key' }, 'offline-tests');
   auth = getAuth(app);
-  connectAuthEmulator(auth, `http://${HOST}:9099`, { disableWarnings: true });
+  connectAuthEmulator(auth, `http://${AUTH.host}:${AUTH.port}`, { disableWarnings: true });
   db = getFirestore(app);
-  connectFirestoreEmulator(db, HOST, 8080);
+  connectFirestoreEmulator(db, FIRESTORE.host, FIRESTORE.port);
 
   const token = await getAdminAuth(adminApp).createCustomToken(DEALER_UID);
   await signInWithCustomToken(auth, token);
