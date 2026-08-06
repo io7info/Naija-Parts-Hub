@@ -8,8 +8,11 @@
  * those out of the client bundle entirely.
  *
  * Safe to import from client components — types and pure functions only, with
- * no Firebase import of any kind.
+ * no Firebase import of any kind. LISTING_CATEGORIES is a plain array of
+ * strings, so importing it here adds no Firebase code to the bundle.
  */
+
+import { LISTING_CATEGORIES, type ListingCategoryId } from '@nph/contracts'
 
 export type Condition = 'New' | 'Used'
 
@@ -72,16 +75,42 @@ export function koboToNaira(kobo: number): number {
   return Math.round(Number(kobo) || 0) / 100
 }
 
-export const categories = [
-  { id: 'car', label: 'Car Parts', icon: 'Car' },
-  { id: 'motorcycle', label: 'Motorcycle Parts', icon: 'Bike' },
-  { id: 'truck', label: 'Truck & Trailer', icon: 'Truck' },
-  { id: 'tractor', label: 'Tractor & Farm', icon: 'Tractor' },
-  { id: 'heavy', label: 'Heavy Equipment', icon: 'Forklift' },
-  { id: 'electrical', label: 'Electrical Parts', icon: 'Zap' },
-] as const
+/**
+ * The marketplace category nav.
+ *
+ * Derived from LISTING_CATEGORIES rather than written out, because each tile
+ * links to `/parts?category=<id>` and that id goes straight into
+ * `where('categoryId', '==', …)`. Any id the dealer app cannot produce is a
+ * tile that leads to an empty page.
+ *
+ * That is not hypothetical. These tiles used to render AUTOMOTIVE_CATEGORIES —
+ * 'car', 'motorcycle', 'truck', 'tractor', 'heavy', 'electrical' — which is the
+ * vertical a *store* declares at registration (SOW §7), not the category a
+ * *part* is filed under. No listing has ever carried `categoryId: 'car'`, so
+ * five of the six tiles could only ever return nothing, and the sixth worked by
+ * coincidence of both lists containing 'electrical'.
+ *
+ * Icons live here and not in the contract: they are a web presentation detail,
+ * and the Flutter app picks its own.
+ */
+const CATEGORY_ICONS: Record<ListingCategoryId, string> = {
+  engine: 'Cog',
+  brake: 'Disc',
+  suspension: 'Waves',
+  electrical: 'Zap',
+  body: 'Car',
+  transmission: 'Settings2',
+  filters: 'Filter',
+  other: 'Wrench',
+}
 
-export type CategoryId = (typeof categories)[number]['id']
+export const categories = LISTING_CATEGORIES.map((c) => ({
+  id: c.id,
+  label: c.name,
+  icon: CATEGORY_ICONS[c.id],
+}))
+
+export type CategoryId = ListingCategoryId
 
 /**
  * Nigerian numbers to E.164 digits, which is what wa.me expects.

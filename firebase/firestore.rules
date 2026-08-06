@@ -91,6 +91,22 @@ service cloud.firestore {
               'compatibleModel', 'images', 'updatedAt'];
     }
 
+    // Every key a dealer may send when CREATING a listing: the dealer fields,
+    // plus the two the create rule pins to a specific value.
+    //
+    // Needed because `validListingPayload` checks the fields it knows about and
+    // says nothing about the ones it does not. Without an exact key set a
+    // dealer could post a perfectly valid draft that also carried, say,
+    // `createdAt: <year 2099>` — and the trigger only ever backfilled a missing
+    // createdAt, so a forged one survived and pinned that listing above every
+    // legitimate result in each `createdAt desc` query, permanently.
+    //
+    // `hasOnly` is a subset test, not equality: a draft written offline without
+    // `updatedAt` still passes, which is deliberate.
+    function listingCreateFields() {
+      return listingDealerFields().concat(['storeId', 'status']);
+    }
+
     // ---------------------------------------------------------------------
     // Validation (SOW section 11, "Input validation")
     // ---------------------------------------------------------------------
@@ -242,6 +258,7 @@ service cloud.firestore {
       // Publishing is unreachable here: 'active' is rejected, and only the
       // publishListing callable can set it, after a transactional count.
       allow create: if isSignedIn()
+        && request.resource.data.keys().hasOnly(listingCreateFields())
         && request.resource.data.storeId == request.auth.uid
         && request.resource.data.status == 'draft'
         && validListingPayload(request.resource.data);

@@ -128,3 +128,34 @@ export interface Category {
   order: number;
   active: boolean;
 }
+
+/**
+ * The seed taxonomy — what `categories/{id}` is populated with.
+ *
+ * These ids are written into every listing's `categoryId`, so they are load
+ * bearing forever: renaming one orphans every listing that used it. Names are
+ * display text and an administrator may edit them freely afterwards.
+ *
+ * Shared rather than duplicated because the marketplace has to filter on
+ * exactly what the dealer app offers. It did not, once: the web homepage
+ * rendered AUTOMOTIVE_CATEGORIES — which classifies a *business*, not a part —
+ * and linked each tile to `/parts?category=<vertical>`. No listing has ever
+ * carried `categoryId: 'car'`, so five of those six tiles could only ever
+ * return an empty page.
+ *
+ * Not the source of truth at runtime: the apps read the Firestore collection,
+ * so an administrator can add a category without a deploy. This is what the
+ * collection is seeded with, and what the marketplace nav offers.
+ */
+export const LISTING_CATEGORIES = [
+  { id: 'engine', name: 'Engine', order: 1 },
+  { id: 'brake', name: 'Brake', order: 2 },
+  { id: 'suspension', name: 'Suspension', order: 3 },
+  { id: 'electrical', name: 'Electrical', order: 4 },
+  { id: 'body', name: 'Body', order: 5 },
+  { id: 'transmission', name: 'Transmission', order: 6 },
+  { id: 'filters', name: 'Filters', order: 7 },
+  { id: 'other', name: 'Other', order: 8 },
+] as const;
+
+export type ListingCategoryId = (typeof LISTING_CATEGORIES)[number]['id'];

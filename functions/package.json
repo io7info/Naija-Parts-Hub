@@ -16,7 +16,9 @@
     "seed": "node scripts/seed-emulator.mjs",
     "seed:admin": "node scripts/seed-emulator.mjs",
     "admin": "node scripts/admin-review.mjs",
-    "seed:marketplace": "node scripts/seed-marketplace.mjs"
+    "seed:marketplace": "node scripts/seed-marketplace.mjs",
+    "seed:prod-categories": "node scripts/seed-production-categories.mjs",
+    "bootstrap:prod-admin": "node scripts/bootstrap-production-admin.mjs"
   },
   "dependencies": {
     "@nph/contracts": "*",

@@ -1,4 +1,5 @@
 import { setGlobalOptions } from 'firebase-functions/v2/options';
+import { FUNCTIONS_REGION } from '@nph/contracts';
 
 /**
  * Naija Parts Hub — Cloud Functions.
@@ -12,7 +13,9 @@ import { setGlobalOptions } from 'firebase-functions/v2/options';
  */
 
 setGlobalOptions({
-  region: 'europe-west1', // closest low-latency region to Nigeria among GCP's
+  // Paired with the Firestore database's location, not with the users; see the
+  // constant's own note. Every client must target the same region.
+  region: FUNCTIONS_REGION,
   maxInstances: 10,
 });
 

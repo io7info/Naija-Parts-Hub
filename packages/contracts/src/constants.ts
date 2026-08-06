@@ -91,3 +91,26 @@ export type AutomotiveCategory = (typeof AUTOMOTIVE_CATEGORIES)[number];
 
 /** Firestore caps `array-contains-any` / `in` at 30 values per query. */
 export const MAX_SEARCH_TOKENS = 60;
+
+// --- Deployment ------------------------------------------------------------
+
+/**
+ * The region every Cloud Function runs in.
+ *
+ * Must pair with the Firestore database's location, not with the users. The
+ * production database is multi-region `nam5`, and Firebase's documented
+ * function region for `nam5` is `us-central1`; a 2nd-gen Firestore trigger
+ * deployed elsewhere is rejected, because its Eventarc trigger location is
+ * derived from the database.
+ *
+ * europe-west1 is closer to Nigeria and was the original choice, but a
+ * callable there would cross the Atlantic for every Firestore read it makes —
+ * several per transaction in registerStore — which costs far more than the
+ * one-way latency it saves.
+ *
+ * Callers must target the same region or every call 404s, so this constant is
+ * imported by the backend, the web app and the tests. Flutter cannot import
+ * TypeScript and mirrors it in apps/mobile/lib/core/env.dart;
+ * scripts/check-rules-sync.mjs fails when the two drift.
+ */
+export const FUNCTIONS_REGION = 'us-central1';

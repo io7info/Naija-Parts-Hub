@@ -77,10 +77,15 @@ abstract final class Env {
   static const int functionsPort =
       int.fromEnvironment('EMULATOR_FUNCTIONS_PORT', defaultValue: 5001);
 
-  /// Must match setGlobalOptions({region}) in functions/src/index.ts, or
-  /// callables resolve to the wrong endpoint against a live project.
+  /// Mirrors FUNCTIONS_REGION in packages/contracts/src/constants.ts.
+  ///
+  /// Dart cannot import TypeScript, so this is copied by hand and
+  /// scripts/check-rules-sync.mjs fails when the two drift. Getting it wrong
+  /// is not a subtle failure: every callable resolves to
+  /// `https://<region>-<project>.cloudfunctions.net/<name>`, so the whole app
+  /// returns "not found" for registration, publishing and deletion alike.
   static const String functionsRegion =
-      String.fromEnvironment('FUNCTIONS_REGION', defaultValue: 'europe-west1');
+      String.fromEnvironment('FUNCTIONS_REGION', defaultValue: 'us-central1');
 
   /// Public marketplace origin — storefronts, product pages, and the plan
   /// upgrade flow all live here.

@@ -15,18 +15,33 @@ export { assertFails, assertSucceeds };
 
 export const PROJECT_ID = 'demo-naija-parts-hub';
 
+/**
+ * Where an emulator is actually listening.
+ *
+ * `emulators:exec` exports these variables for the script it runs, so reading
+ * them makes the suite follow whatever config it was launched under instead of
+ * assuming the default ports. That matters in practice: with a development
+ * emulator suite already holding 8080, hardcoded ports mean the tests cannot
+ * run at all without killing it first.
+ */
+export function emulatorTarget(envVar, defaultPort, defaultHost = '127.0.0.1') {
+  const raw = process.env[envVar];
+  if (!raw) return { host: defaultHost, port: defaultPort };
+  // Values arrive as "host:port", sometimes with a scheme (Storage).
+  const [host, port] = raw.replace(/^https?:\/\//, '').split(':');
+  return { host: host || defaultHost, port: Number(port) || defaultPort };
+}
+
 export async function makeTestEnv() {
   return initializeTestEnvironment({
     projectId: PROJECT_ID,
     firestore: {
       rules: readFileSync(join(firebaseDir, 'firestore.rules'), 'utf8'),
-      host: '127.0.0.1',
-      port: 8080,
+      ...emulatorTarget('FIRESTORE_EMULATOR_HOST', 8080),
     },
     storage: {
       rules: readFileSync(join(firebaseDir, 'storage.rules'), 'utf8'),
-      host: '127.0.0.1',
-      port: 9199,
+      ...emulatorTarget('STORAGE_EMULATOR_HOST', 9199),
     },
   });
 }
