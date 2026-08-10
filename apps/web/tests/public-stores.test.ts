@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { LISTING_CATEGORIES } from '@nph/contracts'
 import { describe, expect, it } from 'vitest'
 
-import { categories } from '../lib/marketplace'
+import { categoryIcon } from '../lib/marketplace'
 
 /**
  * Guards over the public storefront data path.
@@ -116,71 +116,123 @@ describe('the public projection carries no private dealer data', () => {
   }
 })
 
-describe('every homepage category tile can match a real listing', () => {
+describe('marketplace filters run in Firestore, not over a downloaded page', () => {
+  const listing = body('listPublicListings')
+  const planner = REPO.slice(REPO.indexOf('function planFilters('), REPO.indexOf('function planFilters(') + 1400)
+
+  it('search uses the tokens the trigger generates', () => {
+    // searchTokens is written server-side and indexed. Matching a string
+    // haystack in the browser instead meant a part past the fetch limit was
+    // reported as not existing — the opposite of what SOW §7 asks for.
+    expect(listing).toContain("where('searchTokens', 'array-contains'")
+  })
+
+  for (const [name, clause] of [
+    ['category', "where('categoryId', '==', applied.categoryId)"],
+    ['state', "where('storeState', '==', applied.state)"],
+    ['condition', "where('condition', '=='"],
+  ] as const) {
+    it(`${name} is applied by the query`, () => {
+      expect(listing).toContain(clause)
+    })
+  }
+
+  it('results are ordered by the database, not by a formatted label', () => {
+    // The old sort compared postedLabel strings — "Today", "Yesterday",
+    // "3 days ago" — alphabetically, so "newest first" was neither.
+    expect(listing).toContain("orderBy('createdAt', 'desc')")
+    expect(REPO).not.toContain('b.postedLabel.localeCompare')
+  })
+
+  it('reports what it could not apply rather than pretending it did', () => {
+    // Every unindexed combination has to be refined client-side; returning it
+    // is what stops the visible list disagreeing with the checked boxes.
+    expect(listing).toContain('unapplied')
+    expect(planner).toContain('unapplied.state')
+    expect(planner).toContain('unapplied.condition')
+  })
+
+  it('reports truncation, so a partial page is not read as the whole market', () => {
+    expect(listing).toContain('truncated')
+  })
+})
+
+describe('the browse page filters through the URL', () => {
+  const BROWSE = readFileSync(join(WEB_ROOT, 'app/(site)/parts/browse-client.tsx'), 'utf8')
+  const PAGE = readFileSync(join(WEB_ROOT, 'app/(site)/parts/page.tsx'), 'utf8')
+
+  it('the category parameter reaches the query', () => {
+    // The regression: `category` was destructured from searchParams and then
+    // never used, so every homepage tile led to the unfiltered grid.
+    expect(PAGE).toContain('categoryId: params.category')
+  })
+
+  for (const param of ['q', 'category', 'state', 'condition']) {
+    it(`${param} is read from the URL`, () => {
+      expect(PAGE).toContain(`params.${param}`)
+    })
+  }
+
+  it('changing a server-backed filter navigates instead of filtering locally', () => {
+    expect(BROWSE).toContain('router.push')
+    expect(BROWSE).toContain("setParam('category'")
+    expect(BROWSE).toContain("setParam('state'")
+    expect(BROWSE).toContain("setParam('condition'")
+  })
+
+  it('no state list is hardcoded', () => {
+    // Nigeria has 36 states plus the FCT; the four that used to be listed were
+    // a design placeholder, and 33 of the rest would return nothing anyway.
+    for (const stale of ['Anambra', 'Kaduna']) {
+      expect(BROWSE).not.toContain(`'${stale}'`)
+    }
+    expect(PAGE).toContain('listMarketplaceStates')
+  })
+})
+
+describe('the taxonomy is whatever Firestore says it is', () => {
   const HOME = readFileSync(join(WEB_ROOT, 'app/(site)/page.tsx'), 'utf8')
+  const PAGE = readFileSync(join(WEB_ROOT, 'app/(site)/parts/page.tsx'), 'utf8')
   const SEED = readFileSync(
     join(WEB_ROOT, '../../functions/scripts/seed-production-categories.mjs'),
     'utf8',
   )
-  const ids = categories.map((c) => c.id)
 
-  it('the nav is not empty', () => {
-    expect(ids.length).toBe(LISTING_CATEGORIES.length)
+  it('the homepage tiles come from the collection, not a constant', () => {
+    // Once an administrator can add a category from the portal, a list baked
+    // into the web bundle means it appears in the dealer app immediately and
+    // on the marketplace only after a deploy.
+    expect(HOME).toContain('listCategories()')
+    expect(HOME).not.toContain("categories } from '@/lib/marketplace'")
   })
 
-  for (const id of LISTING_CATEGORIES.map((c) => c.id)) {
-    it(`${id} is offered on the homepage`, () => {
-      expect(ids).toContain(id)
-    })
-  }
+  it('the browse filter offers the same collection', () => {
+    expect(PAGE).toContain('listCategories()')
+  })
 
-  it('every tile id is one the production seed creates', () => {
-    // The seed derives its documents from the same constant, so this asserts
-    // the wiring rather than a copied list — a tile can only exist for an id
-    // that will have a `categories/{id}` document.
+  it('the seed still derives from the shared contract', () => {
     expect(SEED).toContain("from '@nph/contracts'")
     expect(SEED).toContain('LISTING_CATEGORIES')
   })
 
-  it('every tile id is one a dealer can actually file a part under', () => {
-    // The regression this replaces: the tiles rendered AUTOMOTIVE_CATEGORIES,
-    // which is the vertical a *store* declares, and linked them to a
-    // categoryId filter. Five of six could never match anything.
-    const dealerSelectable = new Set(LISTING_CATEGORIES.map((c) => c.id))
-    for (const id of ids) {
-      expect(dealerSelectable.has(id as (typeof LISTING_CATEGORIES)[number]['id'])).toBe(true)
-    }
-  })
-
-  it('no store-vertical id survives in the nav', () => {
-    for (const stale of ['car', 'motorcycle', 'truck', 'tractor', 'heavy']) {
-      expect(ids).not.toContain(stale)
-    }
-  })
-
-  it('the homepage links each tile to the category query the marketplace reads', () => {
-    expect(HOME).toContain('/parts?category=${c.id}')
-    expect(REPO).toContain("where('categoryId', '==', options.categoryId)")
-  })
-
-  it('every tile has an icon the card can resolve', () => {
+  it('every seeded category resolves to an icon the card can render', () => {
     const UI = readFileSync(join(WEB_ROOT, 'components/brand/ui-bits.tsx'), 'utf8')
-    // A missing entry silently falls back to the Car icon, so every category
-    // would render identically rather than failing.
-    for (const c of categories) {
-      expect(UI, `iconMap has no ${c.icon} for ${c.id}`).toContain(`\n  ${c.icon},`)
+    for (const c of LISTING_CATEGORIES) {
+      expect(UI, `iconMap has no ${categoryIcon(c.id)} for ${c.id}`).toContain(
+        `\n  ${categoryIcon(c.id)},`,
+      )
     }
   })
-})
 
-describe('public listings are gated on the backend-maintained flag', () => {
-  it('listPublicListings filters on publiclyVisible', () => {
-    expect(body('listPublicListings')).toContain("where('publiclyVisible', '==', true)")
+  it('a category added after this build still renders', () => {
+    // No icon picker exists in the portal, so an unknown id must fall back
+    // rather than render a tile with no icon at all.
+    expect(categoryIcon('a-category-invented-later')).toBe('Wrench')
   })
 
-  it('getPublicListing rejects a listing that is not publicly visible', () => {
-    // A direct id lookup has no query filter, so the check has to be explicit —
-    // otherwise anyone with a listing id could read an unpublished draft.
-    expect(body('getPublicListing')).toContain('publiclyVisible')
+  it('no store-vertical id survives anywhere in the nav', () => {
+    for (const stale of ['car', 'motorcycle', 'tractor']) {
+      expect(HOME).not.toContain(`category=${stale}`)
+    }
   })
 })

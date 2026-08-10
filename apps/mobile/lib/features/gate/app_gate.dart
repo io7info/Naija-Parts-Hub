@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/crash_reporting.dart';
 import '../../core/errors.dart';
 import '../../design/components.dart';
 import '../../models/store.dart';
@@ -43,6 +46,11 @@ class AppGate extends ConsumerWidget {
         onSignOut: () => ref.read(authServiceProvider).signOut(),
       ),
       data: (user) {
+        // Tags subsequent crash reports with the dealer's uid, and clears it on
+        // sign-out. Unawaited: a reporting call must never delay the gate, and
+        // a failure to tag is not worth blocking sign-in over.
+        unawaited(CrashReporting.setDealer(user?.uid));
+
         if (user == null) return const PhoneLoginScreen();
 
         final store = ref.watch(myStoreProvider);

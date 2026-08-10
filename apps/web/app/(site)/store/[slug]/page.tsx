@@ -5,7 +5,7 @@ import { VerifiedBadge } from '@/components/brand/badges'
 import { WhatsAppButton, CallButton, ShareButton } from '@/components/brand/contact-buttons'
 import { StoreInitials } from '@/components/brand/store-card'
 import { formatNigerianPhone } from '@/lib/marketplace'
-import { getPublicStore, listPublicListings } from '@/lib/repositories/marketplace'
+import { getPublicStore } from '@/lib/repositories/marketplace'
 import { StoreProducts } from './store-products'
 
 /**
@@ -25,10 +25,9 @@ export default async function WebStorePage({ params }: { params: Promise<{ slug:
 
   // getPublicStore filters on status === 'approved' && visible, so a suspended
   // dealer's storefront 404s rather than lingering at a known URL.
-  const store = await getPublicStore(slug)
-  if (!store) notFound()
-
-  const items = await listPublicListings({ storeSlug: slug })
+  const result = await getPublicStore(slug)
+  if (!result) notFound()
+  const { store, products: items } = result
 
   return (
     <div>

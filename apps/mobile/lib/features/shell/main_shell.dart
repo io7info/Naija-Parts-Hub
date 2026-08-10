@@ -369,9 +369,11 @@ class _AddButton extends StatelessWidget {
               decoration: BoxDecoration(
                 color: active ? NphColors.orangeHover : NphColors.orange,
                 shape: BoxShape.circle,
-                // `ring-4 ring-card` — separates the circle from whatever
-                // scrolls beneath the bar.
-                border: Border.all(color: NphColors.card, width: 4),
+                // The design's `ring-4 ring-card` is deliberately absent: the
+                // ring read as a white outline rather than as separation from
+                // the content behind. The shadow below already does that job,
+                // and without the border the orange fills the full diameter
+                // instead of being inset by 4px on every side.
                 boxShadow: [
                   BoxShadow(
                     color: NphColors.orange.withValues(alpha: active ? 0.45 : 0.30),

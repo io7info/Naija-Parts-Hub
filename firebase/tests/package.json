@@ -24,12 +24,13 @@
     "and fails in company teaches nothing except to distrust the suite."
   ],
   "scripts": {
-    "test": "npm run test:rules && npm run test:storage && npm run test:limit && npm run test:offline && npm run test:triggers && npm run test:e2e",
+    "test": "npm run test:rules && npm run test:storage && npm run test:limit && npm run test:offline && npm run test:triggers && npm run test:categories && npm run test:e2e",
     "test:rules": "firebase emulators:exec --project demo-naija-parts-hub --only firestore,auth,storage \"node --test --test-force-exit rules.test.mjs\"",
     "test:storage": "firebase emulators:exec --project demo-naija-parts-hub --only firestore,auth,storage \"node --test --test-force-exit storage.test.mjs\"",
     "test:limit": "firebase emulators:exec --project demo-naija-parts-hub --only firestore \"node --test --test-force-exit listing-limit.test.mjs\"",
     "test:offline": "firebase emulators:exec --project demo-naija-parts-hub --only firestore,auth \"node --test --test-force-exit offline.test.mjs\"",
     "test:triggers": "firebase emulators:exec --project demo-naija-parts-hub --only firestore,functions \"node --test --test-force-exit triggers.test.mjs\"",
+    "test:categories": "firebase emulators:exec --project demo-naija-parts-hub --only firestore,auth,functions \"node --test --test-force-exit categories.test.mjs\"",
     "test:e2e": "firebase emulators:exec --project demo-naija-parts-hub --only firestore,auth,functions \"node --test --test-force-exit e2e.test.mjs\"",
     "test:admin-routes": "node --test --test-force-exit admin-routes.test.mjs",
     "test:admin-data": "node --test --test-force-exit admin-data.test.mjs"

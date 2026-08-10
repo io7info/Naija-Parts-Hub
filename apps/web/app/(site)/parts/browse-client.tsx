@@ -1,14 +1,14 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useTransition } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { LayoutGrid, List, SlidersHorizontal, X } from 'lucide-react'
 import { ProductCard } from '@/components/brand/product-card'
 import { EmptyState } from '@/components/brand/ui-bits'
 import { cn } from '@/lib/utils'
-import { type Product } from '@/lib/marketplace'
+import { type Condition, type Product } from '@/lib/marketplace'
 
 const conditions = ['New', 'Used'] as const
-const states = ['Lagos', 'Kano', 'Anambra', 'Kaduna']
 const makes = ['Toyota', 'Honda', 'Bajaj', 'Caterpillar', 'Massey Ferguson']
 
 type Sort = 'relevant' | 'newest' | 'low' | 'high'
@@ -20,18 +20,49 @@ const sortLabels: Record<Sort, string> = {
   high: 'Price: High to Low',
 }
 
+/**
+ * Marketplace browsing.
+ *
+ * Search, category, state and condition live in the URL and are answered by
+ * Firestore; price, vehicle make and "verified only" are refined here over the
+ * fetched page.
+ *
+ * The split is not arbitrary. Filtering entirely in the browser was wrong, not
+ * just slow: with 120 listings downloaded and the rest never fetched, a buyer
+ * searching for a part that exists past that boundary is told it does not.
+ * Putting the four indexed filters in the query makes the answer come from the
+ * whole collection. The other three have no index and stay client-side, which
+ * is honest as long as they only ever narrow an already-correct set.
+ *
+ * URL-driven also means a category tile, a shared link and the back button all
+ * work, and a crawler sees a real filtered page.
+ */
 export function BrowseClient({
   products,
+  categories,
+  states,
   initialQuery,
   initialState,
+  initialCategory,
+  initialCondition,
+  unapplied,
+  truncated,
 }: {
   products: Product[]
+  categories: { id: string; name: string }[]
+  states: string[]
   initialQuery: string
   initialState: string
+  initialCategory: string
+  initialCondition?: Condition
+  unapplied: { state?: string; condition?: Condition }
+  truncated: boolean
 }) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const [pending, startTransition] = useTransition()
+
   const [query, setQuery] = useState(initialQuery)
-  const [selectedStates, setSelectedStates] = useState<string[]>(initialState ? [initialState] : [])
-  const [selectedConditions, setSelectedConditions] = useState<string[]>([])
   const [selectedMakes, setSelectedMakes] = useState<string[]>([])
   const [minPrice, setMinPrice] = useState('')
   const [maxPrice, setMaxPrice] = useState('')
@@ -40,29 +71,41 @@ export function BrowseClient({
   const [layout, setLayout] = useState<'grid' | 'list'>('grid')
   const [showFilters, setShowFilters] = useState(false)
 
+  /** Rewrites one search param and re-runs the server query. */
+  function setParam(key: string, value: string | undefined) {
+    const next = new URLSearchParams(searchParams.toString())
+    if (value) next.set(key, value)
+    else next.delete(key)
+    startTransition(() => router.push(`/parts?${next.toString()}`, { scroll: false }))
+  }
+
   function toggle(list: string[], setter: (v: string[]) => void, value: string) {
     setter(list.includes(value) ? list.filter((v) => v !== value) : [...list, value])
   }
 
   function clearAll() {
     setQuery('')
-    setSelectedStates([])
-    setSelectedConditions([])
     setSelectedMakes([])
     setMinPrice('')
     setMaxPrice('')
     setVerifiedOnly(false)
+    startTransition(() => router.push('/parts', { scroll: false }))
   }
 
   const results = useMemo(() => {
     let list: Product[] = products.filter((p) => {
-      if (query) {
+      // Typing narrows what is on screen immediately; submitting re-queries
+      // Firestore for the authoritative answer. Without this the input would
+      // feel dead until Enter.
+      if (query && query !== initialQuery) {
         const q = query.toLowerCase()
         const hay = `${p.name} ${p.partNumber} ${p.vehicleMake} ${p.vehicleModel} ${p.category}`.toLowerCase()
         if (!hay.includes(q)) return false
       }
-      if (selectedStates.length && !selectedStates.includes(p.state)) return false
-      if (selectedConditions.length && !selectedConditions.includes(p.condition)) return false
+      // Re-applied here only when no index could cover them alongside the rest.
+      if (unapplied.state && p.state !== unapplied.state) return false
+      if (unapplied.condition && p.condition !== unapplied.condition) return false
+
       if (selectedMakes.length && !selectedMakes.includes(p.vehicleMake)) return false
       if (minPrice && p.price < Number(minPrice)) return false
       if (maxPrice && p.price > Number(maxPrice)) return false
@@ -71,35 +114,55 @@ export function BrowseClient({
     })
     if (sort === 'low') list = [...list].sort((a, b) => a.price - b.price)
     if (sort === 'high') list = [...list].sort((a, b) => b.price - a.price)
+    // 'relevant' and 'newest' both keep the server's order, which is
+    // createdAt descending.
     return list
-  }, [products, query, selectedStates, selectedConditions, selectedMakes, minPrice, maxPrice, verifiedOnly, sort])
+  }, [products, query, initialQuery, unapplied, selectedMakes, minPrice, maxPrice, verifiedOnly, sort])
 
-  const heading = query
-    ? `${query.charAt(0).toUpperCase() + query.slice(1)} parts for sale`
-    : 'All automotive parts for sale'
+  const activeCategory = categories.find((c) => c.id === initialCategory)
+  const heading = initialQuery
+    ? `${initialQuery.charAt(0).toUpperCase() + initialQuery.slice(1)} parts for sale`
+    : activeCategory
+      ? `${activeCategory.name} parts for sale`
+      : 'All automotive parts for sale'
 
   const filterPanel = (
     <div className="space-y-6">
+      <FilterGroup title="Category">
+        {categories.map((c) => (
+          <CheckRow
+            key={c.id}
+            label={c.name}
+            checked={initialCategory === c.id}
+            onChange={() => setParam('category', initialCategory === c.id ? undefined : c.id)}
+          />
+        ))}
+      </FilterGroup>
+
       <FilterGroup title="Condition">
         {conditions.map((c) => (
           <CheckRow
             key={c}
             label={c}
-            checked={selectedConditions.includes(c)}
-            onChange={() => toggle(selectedConditions, setSelectedConditions, c)}
+            checked={initialCondition === c}
+            onChange={() => setParam('condition', initialCondition === c ? undefined : c.toLowerCase())}
           />
         ))}
       </FilterGroup>
 
       <FilterGroup title="State">
-        {states.map((s) => (
-          <CheckRow
-            key={s}
-            label={s}
-            checked={selectedStates.includes(s)}
-            onChange={() => toggle(selectedStates, setSelectedStates, s)}
-          />
-        ))}
+        {states.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No verified dealers yet.</p>
+        ) : (
+          states.map((s) => (
+            <CheckRow
+              key={s}
+              label={s}
+              checked={initialState === s}
+              onChange={() => setParam('state', initialState === s ? undefined : s)}
+            />
+          ))
+        )}
       </FilterGroup>
 
       <FilterGroup title="Price range (₦)">
@@ -156,7 +219,13 @@ export function BrowseClient({
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
       {/* Search bar */}
-      <div className="rounded-2xl border border-border bg-card p-2">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          setParam('q', query.trim() || undefined)
+        }}
+        className="flex gap-2 rounded-2xl border border-border bg-card p-2"
+      >
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -164,13 +233,22 @@ export function BrowseClient({
           className="w-full rounded-xl px-4 py-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
           aria-label="Search parts"
         />
-      </div>
+        <button
+          type="submit"
+          className="shrink-0 rounded-xl bg-orange px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-orange-hover"
+        >
+          Search
+        </button>
+      </form>
 
       <h1 className="mt-6 font-heading text-2xl font-bold text-foreground">
         {heading}
-        {selectedStates.length === 1 ? ` in ${selectedStates[0]}` : ''}
+        {initialState ? ` in ${initialState}` : ''}
       </h1>
-      <p className="mt-1 text-sm text-muted-foreground">{results.length} listings found</p>
+      <p className="mt-1 text-sm text-muted-foreground" aria-live="polite">
+        {pending ? 'Searching…' : `${results.length} listing${results.length === 1 ? '' : 's'} found`}
+        {truncated && !pending ? ' — showing the newest 120, narrow your filters to see more' : ''}
+      </p>
 
       <div className="mt-6 flex gap-8">
         {/* Sidebar (desktop) */}

@@ -23,4 +23,5 @@ export { registerStore } from './registerStore';
 export { publishListing } from './publishListing';
 export { unpublishListing, deleteListing, deleteAccount } from './listingLifecycle';
 export { adminReviewStore, adminModerateListing } from './adminReviewStore';
+export { adminManageCategory } from './adminManageCategory';
 export { onListingWritten, onStoreWritten } from './triggers';
