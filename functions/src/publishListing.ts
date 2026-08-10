@@ -1,7 +1,6 @@
 import { onCall } from 'firebase-functions/v2/https';
 import {
   ERROR_CODE,
-  FREE_ACTIVE_LISTING_LIMIT,
   PAID_ACTIVE_LISTING_LIMIT,
   generateSearchTokens,
   type PublishListingRequest,
@@ -11,6 +10,7 @@ import {
 } from '@nph/contracts';
 import { FieldValue, Timestamp, db, listingRef, storeRef } from './lib/admin';
 import { fail, requireAuth, requireString } from './lib/guards';
+import { fromStore, limitFor } from './lib/subscription';
 
 const UPGRADE_URL = process.env.UPGRADE_URL ?? 'https://naijapartshub.ng/upgrade';
 
@@ -18,13 +18,17 @@ const UPGRADE_URL = process.env.UPGRADE_URL ?? 'https://naijapartshub.ng/upgrade
  * Entitlement ceiling for a store's current plan.
  *
  * A lapsed paid plan still counts as paid while inside its grace window, so a
- * dealer whose card fails on a Friday does not have listings pulled down over
- * the weekend.
+ * dealer whose payment slips on a Friday does not have listings pulled down
+ * over the weekend.
+ *
+ * Derived from `expiresAt` rather than read from the stored `status`. That
+ * field is only as fresh as the last nightly sweep, so between expiry and the
+ * next run it still says `active` — and publishing is exactly where that gap
+ * would be exploited, since a dealer who notices could add 190 listings on a
+ * subscription that ended hours ago.
  */
-export function activeLimitFor(store: Pick<Store, 'subscription'>): number {
-  const { plan, status } = store.subscription;
-  const paid = plan !== 'free' && (status === 'active' || status === 'grace');
-  return paid ? PAID_ACTIVE_LISTING_LIMIT : FREE_ACTIVE_LISTING_LIMIT;
+export function activeLimitFor(store: Pick<Store, 'subscription'>, now = Date.now()): number {
+  return limitFor(fromStore(store), now);
 }
 
 /**

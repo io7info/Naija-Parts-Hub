@@ -29,6 +29,7 @@
     "test:offline": "npm run test:offline --workspace @nph/firebase-tests",
     "test:triggers": "npm run test:triggers --workspace @nph/firebase-tests",
     "test:categories": "npm run test:categories --workspace @nph/firebase-tests",
+    "test:functions": "npm run test --workspace @nph/functions",
     "test:emulator": "npm run test --workspace @nph/firebase-tests",
     "admin": "npm run admin --workspace @nph/functions --",
     "test:admin-routes": "npm run test:admin-routes --workspace @nph/firebase-tests",

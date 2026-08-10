@@ -12,6 +12,7 @@
     "build": "tsc -p tsconfig.json",
     "watch": "tsc -p tsconfig.json --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test --test-force-exit",
     "serve": "npm run build && firebase emulators:start --only functions,firestore,auth,storage",
     "seed": "node scripts/seed-emulator.mjs",
     "seed:admin": "node scripts/seed-emulator.mjs",
