@@ -7,6 +7,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/crash_reporting.dart';
 import 'core/firebase_bootstrap.dart';
 import 'design/theme.dart';
 import 'features/gate/app_gate.dart';
@@ -18,6 +19,10 @@ Future<void> main() async {
   // Never throws — reports its outcome instead, so the app still boots when
   // the backend is unreachable or unconfigured.
   final firebase = await initializeFirebase();
+
+  // After Firebase, because Crashlytics needs the default app; before runApp,
+  // so an error thrown during the first frame is already being watched for.
+  if (firebase.isReady) await CrashReporting.install();
 
   runApp(
     ProviderScope(

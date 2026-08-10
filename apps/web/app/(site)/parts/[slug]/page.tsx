@@ -32,11 +32,12 @@ export default async function WebProductPage({ params }: { params: Promise<{ slu
   const product = await getPublicListing(slug)
   if (!product) notFound()
 
-  const [store, sameCategory] = await Promise.all([
+  const [storeResult, sameCategory] = await Promise.all([
     getPublicStore(product.storeSlug),
     listPublicListings({ categoryId: product.category, limit: 5 }),
   ])
-  const relatedList = sameCategory.filter((p) => p.id !== product.id).slice(0, 4)
+  const store = storeResult?.store ?? null
+  const relatedList = sameCategory.products.filter((p) => p.id !== product.id).slice(0, 4)
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">

@@ -13,7 +13,8 @@ import { CategoryCard } from '@/components/brand/ui-bits'
 import { ProductCard } from '@/components/brand/product-card'
 import { StoreCard } from '@/components/brand/store-card'
 import { HeroSearch } from '@/components/web/hero-search'
-import { categories } from '@/lib/marketplace'
+import { categoryIcon } from '@/lib/marketplace'
+import { listCategories } from '@/lib/repositories/categories'
 import { listPublicListings, listPublicStores } from '@/lib/repositories/marketplace'
 
 /**
@@ -46,10 +47,12 @@ export default async function WebHomePage() {
   // Eight newest live listings and the busiest verified stores. Both queries
   // filter on backend-maintained flags, so an unapproved dealer can never
   // surface here regardless of what they write to their own document.
-  const [products, stores] = await Promise.all([
+  const [listings, stores, categories] = await Promise.all([
     listPublicListings({ limit: 8 }),
     listPublicStores(6),
+    listCategories(),
   ])
+  const products = listings.products
 
   return (
     <>
@@ -115,7 +118,12 @@ export default async function WebHomePage() {
             tiles used — two even rows beat one row of eight narrow tiles. */}
         <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-4">
           {categories.map((c) => (
-            <CategoryCard key={c.id} label={c.label} icon={c.icon} href={`/parts?category=${c.id}`} />
+            <CategoryCard
+              key={c.categoryId}
+              label={c.name}
+              icon={categoryIcon(c.categoryId)}
+              href={`/parts?category=${c.categoryId}`}
+            />
           ))}
         </div>
       </section>

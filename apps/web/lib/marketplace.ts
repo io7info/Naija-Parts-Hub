@@ -12,7 +12,7 @@
  * strings, so importing it here adds no Firebase code to the bundle.
  */
 
-import { LISTING_CATEGORIES, type ListingCategoryId } from '@nph/contracts'
+import { type ListingCategoryId } from '@nph/contracts'
 
 export type Condition = 'New' | 'Used'
 
@@ -104,11 +104,18 @@ const CATEGORY_ICONS: Record<ListingCategoryId, string> = {
   other: 'Wrench',
 }
 
-export const categories = LISTING_CATEGORIES.map((c) => ({
-  id: c.id,
-  label: c.name,
-  icon: CATEGORY_ICONS[c.id],
-}))
+/**
+ * Icon for a category id, falling back for one this build has never seen.
+ *
+ * A lookup rather than a baked-in list because the taxonomy now lives in
+ * Firestore: an administrator can add a category from the portal, and it must
+ * render on the marketplace immediately rather than after the next deploy.
+ * Only the icon stays in code — there is no icon picker in the portal, and a
+ * generic wrench is a better answer than a missing tile.
+ */
+export function categoryIcon(id: string): string {
+  return CATEGORY_ICONS[id as ListingCategoryId] ?? 'Wrench'
+}
 
 export type CategoryId = ListingCategoryId
 

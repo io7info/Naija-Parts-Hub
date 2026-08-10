@@ -21,6 +21,7 @@ export const CALLABLE = {
   // Admin-only (SOW §3, §9)
   adminReviewStore: 'adminReviewStore',
   adminModerateListing: 'adminModerateListing',
+  adminManageCategory: 'adminManageCategory',
 } as const;
 
 export type CallableName = (typeof CALLABLE)[keyof typeof CALLABLE];
@@ -42,6 +43,8 @@ export const ERROR_CODE = {
   PAYMENT_ALREADY_APPLIED: 'PAYMENT_ALREADY_APPLIED',
   PAYMENT_NOT_VERIFIED: 'PAYMENT_NOT_VERIFIED',
   AMOUNT_MISMATCH: 'AMOUNT_MISMATCH',
+  CATEGORY_EXISTS: 'CATEGORY_EXISTS',
+  CATEGORY_IN_USE: 'CATEGORY_IN_USE',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODE)[keyof typeof ERROR_CODE];
@@ -149,4 +152,38 @@ export interface AdminModerateListingRequest {
   listingId: string;
   action: 'remove' | 'restore';
   reason?: string;
+}
+
+/**
+ * Category taxonomy management (SOW §9, "basic category management").
+ *
+ * A callable rather than a direct admin write, for two reasons. The audit trail
+ * in `adminActions` is written by the same function that makes the change, so
+ * there is no path that alters the taxonomy without recording who did it. And
+ * deactivating a category has to be checked against the listings that use it,
+ * which is a read the client should not be trusted to have done.
+ *
+ * Deliberately no `delete`. A category id is written into every listing that
+ * chose it, and deleting the document leaves those listings pointing at nothing
+ * — the filter drops them, the dealer cannot see why, and the id cannot be
+ * recovered from the listings themselves. Deactivating hides it from the picker
+ * and the marketplace nav while leaving existing listings intact and reversible.
+ */
+export interface AdminManageCategoryRequest {
+  action: 'create' | 'update' | 'setActive';
+  /**
+   * Slug-shaped and immutable once created: it is stored on every listing that
+   * uses it, so renaming the id would orphan all of them. `name` is the
+   * display text and may be edited freely.
+   */
+  categoryId: string;
+  name?: string;
+  order?: number;
+  active?: boolean;
+}
+
+export interface AdminManageCategoryResponse {
+  categoryId: string;
+  /** Listings referencing this category, so the portal can explain a refusal. */
+  listingCount?: number;
 }

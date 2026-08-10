@@ -104,34 +104,114 @@ function toStore(d: Doc, categories: string[] = []): Store {
   }
 }
 
+export type ListingQuery = {
+  /** Free text, matched against the prefix tokens the trigger generates. */
+  search?: string
+  categoryId?: string
+  state?: string
+  condition?: Condition
+  storeId?: string
+  limit?: number
+}
+
+/** What the caller asked for, and what the query could actually apply. */
+export type ListingResults = {
+  products: Product[]
+  /** Filters left for the client, because no index covers them together. */
+  unapplied: { state?: string; condition?: Condition }
+  /** True when the limit was reached, so results are a page, not the whole set. */
+  truncated: boolean
+}
+
 /**
- * Publicly visible listings, newest first.
+ * The filter combinations firestore.indexes.json actually covers.
+ *
+ * Firestore needs a composite index per combination of equality filters plus an
+ * `orderBy`, and it fails the query outright rather than degrading. Rather than
+ * guess, this mirrors the declared indexes exactly:
+ *
+ *   search | search+category | category | category+state | category+condition
+ *   state  | condition       | storeId  | (none)
+ *
+ * Anything else — search+state, state+condition, all three — has no index, so
+ * the widest supported subset runs in Firestore and the remainder is handed
+ * back for the client to refine. That keeps ordering and the limit meaningful
+ * server-side without adding an index per permutation a buyer might click.
+ */
+function planFilters(q: ListingQuery) {
+  const applied: ListingQuery = {}
+  const unapplied: ListingResults['unapplied'] = {}
+
+  if (q.search) {
+    applied.search = q.search
+    if (q.categoryId) applied.categoryId = q.categoryId
+    if (q.state) unapplied.state = q.state
+    if (q.condition) unapplied.condition = q.condition
+    return { applied, unapplied }
+  }
+
+  if (q.categoryId) {
+    applied.categoryId = q.categoryId
+    // Only one of these can join category in an index; state is the more
+    // selective of the two in this market, and condition is a coarse binary.
+    if (q.state) {
+      applied.state = q.state
+      if (q.condition) unapplied.condition = q.condition
+    } else if (q.condition) {
+      applied.condition = q.condition
+    }
+    return { applied, unapplied }
+  }
+
+  if (q.state) {
+    applied.state = q.state
+    if (q.condition) unapplied.condition = q.condition
+    return { applied, unapplied }
+  }
+
+  if (q.condition) applied.condition = q.condition
+  return { applied, unapplied }
+}
+
+/**
+ * Publicly visible listings, genuinely newest first.
+ *
+ * Ordering is `orderBy('createdAt', 'desc')` in Firestore. It used to be a
+ * client-side sort on `postedLabel`, which compares strings like "Today",
+ * "Yesterday" and "3 days ago" alphabetically — so the marketplace was not in
+ * date order at all, and the limit selected an arbitrary page rather than the
+ * newest one.
  *
  * `limit` is applied in Firestore rather than after fetching, so an unbounded
  * marketplace never turns into an unbounded read.
  */
-export async function listPublicListings(options: {
-  categoryId?: string
-  state?: string
-  storeSlug?: string
-  limit?: number
-} = {}): Promise<Product[]> {
+export async function listPublicListings(q: ListingQuery = {}): Promise<ListingResults> {
+  const { applied, unapplied } = planFilters(q)
+  const limit = q.limit ?? 60
+
   let query = getAdminDb()
     .collection('listings')
     .where('publiclyVisible', '==', true)
 
-  if (options.categoryId) query = query.where('categoryId', '==', options.categoryId)
-  if (options.state) query = query.where('storeState', '==', options.state)
-  if (options.storeSlug) query = query.where('storeSlug', '==', options.storeSlug)
+  if (applied.search) {
+    // Prefix tokens, lowercased to match generateSearchTokens. Buys "bra" ->
+    // "brake"; buys no typo tolerance, which is the documented trade.
+    query = query.where('searchTokens', 'array-contains', applied.search.trim().toLowerCase())
+  }
+  if (applied.categoryId) query = query.where('categoryId', '==', applied.categoryId)
+  if (applied.state) query = query.where('storeState', '==', applied.state)
+  if (applied.condition) {
+    query = query.where('condition', '==', applied.condition === 'Used' ? 'used' : 'new')
+  }
+  if (q.storeId) query = query.where('storeId', '==', q.storeId)
 
-  const snapshot = await query.limit(options.limit ?? 60).get()
+  const snapshot = await query.orderBy('createdAt', 'desc').limit(limit).get()
 
-  return snapshot.docs
-    .map((doc) => toProduct(doc.id, doc.data()))
-    // Sorted here rather than with orderBy: combining orderBy with the filters
-    // above would demand a composite index per filter combination, and Phase 1
-    // volumes do not justify five indexes to order one page of results.
-    .sort((a, b) => b.postedLabel.localeCompare(a.postedLabel))
+  return {
+    products: snapshot.docs.map((doc) => toProduct(doc.id, doc.data())),
+    unapplied,
+    truncated: snapshot.size === limit,
+  }
 }
 
 export async function getPublicListing(listingId: string): Promise<Product | null> {
@@ -161,7 +241,17 @@ export async function listPublicStores(limit = 60): Promise<Store[]> {
     .sort((a, b) => b.activeListings - a.activeListings)
 }
 
-export async function getPublicStore(slug: string): Promise<Store | null> {
+/**
+ * A storefront and its listings in one call.
+ *
+ * The listings come back rather than being fetched again by the caller: the
+ * store's category chips are derived from them, so the query has to run here
+ * anyway, and `storeId` is the dealer's auth uid — returning it so a page could
+ * re-query would put that uid in public HTML.
+ */
+export async function getPublicStore(
+  slug: string,
+): Promise<{ store: Store; products: Product[] } | null> {
   const snapshot = await getAdminDb()
     .collection('stores')
     .where('slug', '==', slug)
@@ -172,10 +262,36 @@ export async function getPublicStore(slug: string): Promise<Store | null> {
 
   if (snapshot.empty) return null
 
-  const listings = await listPublicListings({ storeSlug: slug })
-  const categories = [...new Set(listings.map((l) => l.category).filter(Boolean))]
+  // By id, not slug: `publiclyVisible + storeId + createdAt` is indexed and
+  // `storeSlug` is not, and the ordered query needs an index to run at all.
+  const doc = snapshot.docs[0]!
+  const { products } = await listPublicListings({ storeId: doc.id, limit: 120 })
+  const categories = [...new Set(products.map((l) => l.category).filter(Boolean))]
 
-  return toStore(snapshot.docs[0]!.data(), categories)
+  return { store: toStore(doc.data(), categories), products }
+}
+
+/**
+ * States a buyer can usefully filter by.
+ *
+ * Derived from the approved, visible stores rather than a hardcoded list. The
+ * previous four names were a design placeholder; Nigeria has 36 states plus the
+ * FCT, and offering all 37 would give a buyer 33 filters that return nothing.
+ * Offering only the states with a verified dealer in them means every option in
+ * the list leads somewhere.
+ *
+ * Reads stores rather than listings because there are far fewer of them and a
+ * store's state is the same state the listings denormalize onto themselves.
+ */
+export async function listMarketplaceStates(): Promise<string[]> {
+  const snapshot = await getAdminDb()
+    .collection('stores')
+    .where('status', '==', 'approved')
+    .where('visible', '==', true)
+    .select('state')
+    .get()
+
+  return [...new Set(snapshot.docs.map((d) => d.get('state') as string).filter(Boolean))].sort()
 }
 
 /** Slugs for generateStaticParams. Empty is valid — a new project has no stores. */
