@@ -144,12 +144,40 @@ describe('marketplace filters run in Firestore, not over a downloaded page', () 
     expect(REPO).not.toContain('b.postedLabel.localeCompare')
   })
 
-  it('reports what it could not apply rather than pretending it did', () => {
-    // Every unindexed combination has to be refined client-side; returning it
-    // is what stops the visible list disagreeing with the checked boxes.
-    expect(listing).toContain('unapplied')
-    expect(planner).toContain('unapplied.state')
-    expect(planner).toContain('unapplied.condition')
+  it('applies every URL filter in the query, leaving nothing to the client', () => {
+    // Applying only a subset was correct while a result set fitted in one page
+    // and wrong past it: the leftover filter ran over the listings that had
+    // been fetched and silently not over the ones that had not, so a buyer
+    // could be told a part did not exist when it did.
+    for (const f of ['q.search', 'q.categoryId', 'q.state', 'q.condition']) {
+      expect(planner, `${f} must reach the query`).toContain(f)
+    }
+    expect(planner).not.toContain('unapplied.state')
+    expect(planner).not.toContain('unapplied.condition')
+  })
+
+  it('every combination the UI can produce has a composite index', () => {
+    // Firestore fails an unindexed ordered query outright rather than
+    // degrading, so a filter pairing with no index is a 500 on a page a buyer
+    // reached by ticking two boxes. This asserts the declared indexes cover all
+    // sixteen subsets, which is what lets planFilters apply everything.
+    const indexes = JSON.parse(
+      readFileSync(join(WEB_ROOT, '../../firebase/firestore.indexes.json'), 'utf8'),
+    ) as { indexes: { collectionGroup: string; fields: { fieldPath: string }[] }[] }
+
+    const declared = new Set(
+      indexes.indexes
+        .filter((i) => i.collectionGroup === 'listings')
+        .map((i) => i.fields.map((f) => f.fieldPath).join('+')),
+    )
+
+    const filters = ['searchTokens', 'categoryId', 'storeState', 'condition']
+
+    for (let mask = 0; mask < 16; mask++) {
+      const combo = filters.filter((_, bit) => mask & (1 << bit))
+      const key = ['publiclyVisible', ...combo, 'createdAt'].join('+')
+      expect(declared, `no index for ${combo.join(' + ') || 'no filters'}`).toContain(key)
+    }
   })
 
   it('reports truncation, so a partial page is not read as the whole market', () => {
@@ -234,5 +262,42 @@ describe('the taxonomy is whatever Firestore says it is', () => {
     for (const stale of ['car', 'motorcycle', 'tractor']) {
       expect(HOME).not.toContain(`category=${stale}`)
     }
+  })
+})
+
+describe('the documented environment matches the consumed environment', () => {
+  // A variable named wrongly in the example is worse than one left out. It
+  // looks set, the deployment looks configured, and the code quietly falls back
+  // to a default — which is exactly how production ended up rejecting every
+  // admin sign-in from its own domain.
+  const EXAMPLE = readFileSync(join(WEB_ROOT, '.env.local.example'), 'utf8')
+  const SESSION = readFileSync(join(WEB_ROOT, 'lib/admin-session.ts'), 'utf8')
+  const CONFIG = readFileSync(join(WEB_ROOT, 'lib/firebase-config.ts'), 'utf8')
+
+  it('the admin origin variable is named the same in both places', () => {
+    expect(SESSION).toContain('process.env.ADMIN_ALLOWED_ORIGINS')
+    expect(EXAMPLE).toContain('ADMIN_ALLOWED_ORIGINS')
+  })
+
+  it('the name no code reads is not offered as if it worked', () => {
+    // Kept only inside the explanatory comment, never as a settable line.
+    const settable = EXAMPLE.split('\n').filter((l) => /^#?\s*NPH_ALLOWED_ORIGINS\s*=/.test(l))
+    expect(settable).toEqual([])
+    expect(SESSION).not.toContain('NPH_ALLOWED_ORIGINS')
+  })
+
+  it('the emulator switch is named the same in both places', () => {
+    // Set to "true" on a deployed site, this makes the app ignore every real
+    // Firebase value and dial 127.0.0.1 — which on Vercel is Vercel.
+    expect(CONFIG).toContain("process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS === 'true'")
+    expect(EXAMPLE).toContain('NEXT_PUBLIC_USE_FIREBASE_EMULATORS')
+  })
+
+  it('production is opt-in to emulators, never opt-out', () => {
+    // A missing variable must mean "live", so an unconfigured deployment fails
+    // loudly on credentials rather than silently pointing at a loopback that
+    // is not there.
+    expect(CONFIG).toContain("=== 'true'")
+    expect(CONFIG).not.toMatch(/NEXT_PUBLIC_USE_FIREBASE_EMULATORS\s*!==\s*'false'/)
   })
 })

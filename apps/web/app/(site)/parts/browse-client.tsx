@@ -29,10 +29,19 @@ const sortLabels: Record<Sort, string> = {
  *
  * The split is not arbitrary. Filtering entirely in the browser was wrong, not
  * just slow: with 120 listings downloaded and the rest never fetched, a buyer
- * searching for a part that exists past that boundary is told it does not.
- * Putting the four indexed filters in the query makes the answer come from the
- * whole collection. The other three have no index and stay client-side, which
- * is honest as long as they only ever narrow an already-correct set.
+ * searching for a part that exists past that boundary is told it does not. All
+ * four URL filters now have composite indexes for every combination, so their
+ * answers come from the whole collection.
+ *
+ * The remaining three are a known Phase 1 limitation, stated rather than
+ * hidden. Price, vehicle make and "verified only" have no index and no URL
+ * parameter, so they narrow the fetched page only. Two things keep that
+ * honest: they can only ever remove rows from an already-correct server-side
+ * result, and `truncated` tells the buyer when they are looking at a page
+ * rather than the whole market. If the catalogue grows past the point where
+ * that reads as adequate, they want indexes and URL parameters of their own —
+ * "verified only" in particular is currently a no-op, since every publicly
+ * visible listing belongs to an approved dealer by construction.
  *
  * URL-driven also means a category tile, a shared link and the back button all
  * work, and a crawler sees a real filtered page.

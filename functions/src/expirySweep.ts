@@ -164,10 +164,19 @@ async function downgradeToFree(storeId: string): Promise<number> {
 
 export const sweepExpiredSubscriptions = onSchedule(
   {
-    schedule: 'every day 02:00',
+    // Hourly, not daily. Entitlement is derived from `expiresAt` and is exact
+    // at every instant, so publishing is never wrong — but `publiclyVisible` is
+    // a stored field, and only this job clears it. On a daily schedule a lapsed
+    // dealer's stock could sit on the public marketplace for up to 24 hours
+    // after their grace period ended, which is the one thing paying dealers
+    // would notice and object to.
+    //
+    // The cost is two limited store queries per run: ~1,400 reads a month at
+    // Phase 1 volumes, against a free tier of 50,000 a day.
+    schedule: 'every 1 hours',
     timeZone: 'Africa/Lagos',
     // One retry: a transient Firestore error should not leave expired dealers
-    // live for a full day, and the sweep is idempotent — a second run finds
+    // live for another hour, and the sweep is idempotent — a second run finds
     // the already-correct stores and skips them.
     retryCount: 1,
   },

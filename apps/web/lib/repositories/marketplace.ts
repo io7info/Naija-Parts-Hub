@@ -124,52 +124,34 @@ export type ListingResults = {
 }
 
 /**
- * The filter combinations firestore.indexes.json actually covers.
+ * Every filter the browse UI exposes now runs in Firestore.
  *
  * Firestore needs a composite index per combination of equality filters plus an
- * `orderBy`, and it fails the query outright rather than degrading. Rather than
- * guess, this mirrors the declared indexes exactly:
+ * `orderBy`, and it fails the query outright rather than degrading — so this
+ * used to apply the widest indexed subset and hand the rest back for the
+ * browser to refine. That was correct only while a result set fitted inside one
+ * page: past the limit, the leftover filter was applied to listings that had
+ * been fetched and silently not to the ones that had not, so a buyer could be
+ * told a part did not exist when it did.
  *
- *   search | search+category | category | category+state | category+condition
- *   state  | condition       | storeId  | (none)
+ * `firestore.indexes.json` now declares all sixteen subsets of
+ * {search, category, state, condition}, so nothing is left over. The cost is
+ * index storage and a slightly wider write fan-out per listing; the benefit is
+ * that a filtered answer is drawn from the whole collection rather than from
+ * whatever happened to be on the first page.
  *
- * Anything else — search+state, state+condition, all three — has no index, so
- * the widest supported subset runs in Firestore and the remainder is handed
- * back for the client to refine. That keeps ordering and the limit meaningful
- * server-side without adding an index per permutation a buyer might click.
+ * `unapplied` is kept rather than deleted: it is the honest signal if a future
+ * filter is added to the UI before its index exists.
  */
 function planFilters(q: ListingQuery) {
   const applied: ListingQuery = {}
   const unapplied: ListingResults['unapplied'] = {}
 
-  if (q.search) {
-    applied.search = q.search
-    if (q.categoryId) applied.categoryId = q.categoryId
-    if (q.state) unapplied.state = q.state
-    if (q.condition) unapplied.condition = q.condition
-    return { applied, unapplied }
-  }
-
-  if (q.categoryId) {
-    applied.categoryId = q.categoryId
-    // Only one of these can join category in an index; state is the more
-    // selective of the two in this market, and condition is a coarse binary.
-    if (q.state) {
-      applied.state = q.state
-      if (q.condition) unapplied.condition = q.condition
-    } else if (q.condition) {
-      applied.condition = q.condition
-    }
-    return { applied, unapplied }
-  }
-
-  if (q.state) {
-    applied.state = q.state
-    if (q.condition) unapplied.condition = q.condition
-    return { applied, unapplied }
-  }
-
+  if (q.search) applied.search = q.search
+  if (q.categoryId) applied.categoryId = q.categoryId
+  if (q.state) applied.state = q.state
   if (q.condition) applied.condition = q.condition
+
   return { applied, unapplied }
 }
 

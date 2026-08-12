@@ -54,24 +54,42 @@ export const freeSubscription = (): SubscriptionState => ({
 /**
  * The subscription a successful payment produces.
  *
- * `now + durationDays`, never `expiresAt + durationDays`. Renewing early would
- * otherwise stack time the dealer has not used yet, and — per decision 4 —
- * upgrading from monthly to yearly grants a full 365 days from the upgrade
- * date rather than prorating the unused monthly remainder. That is the client's
- * choice and it favours the dealer, so the simpler rule is also the generous
- * one.
+ * Renewing the *same* plan appends to whatever is left: the new period starts
+ * at `max(now, expiresAt)`. A dealer who renews a week early has already paid
+ * for that week, and resetting the clock would quietly confiscate it — which is
+ * exactly the dealer who is trying hardest not to lapse.
+ *
+ * Changing plan starts from `now`, per the client's decision 4: a monthly
+ * dealer upgrading to yearly gets a full 365 days from the upgrade date with no
+ * proration. Their remaining monthly days are absorbed rather than added, which
+ * is the simpler rule they chose and, for the monthly→yearly direction they had
+ * in mind, costs at most 29 days against a 365-day purchase.
+ *
+ * The mirror case — yearly downgrading to monthly mid-term — follows the same
+ * rule and would forfeit up to 364 paid days. Nobody has asked for a downgrade
+ * and the UI does not offer one; if it ever does, this is the branch that needs
+ * a decision rather than a default.
  */
 export function activate(
   plan: Exclude<SubscriptionPlan, 'free'>,
   reference: string,
   now: Instant,
+  current?: SubscriptionState,
 ): SubscriptionState {
-  const expiresAt = now + PLANS[plan].durationDays * DAY_MS;
+  const samePlan = current?.plan === plan;
+  // Only unexpired time carries over. Renewing during the grace window starts
+  // from now, because the paid period has genuinely ended by then.
+  const carriesOver = samePlan && current?.expiresAt != null && current.expiresAt > now;
+  const startsAt = carriesOver ? current!.expiresAt! : now;
+
+  const expiresAt = startsAt + PLANS[plan].durationDays * DAY_MS;
 
   return {
     plan,
     status: 'active',
-    startedAt: now,
+    // startedAt marks when this run of cover began, so an appended renewal
+    // keeps the original date rather than pretending cover restarted today.
+    startedAt: carriesOver ? (current!.startedAt ?? now) : now,
     expiresAt,
     graceEndsAt: expiresAt + SUBSCRIPTION_GRACE_DAYS * DAY_MS,
     lastPaymentReference: reference,

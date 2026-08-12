@@ -8,7 +8,7 @@ import {
   type Store,
   type Listing,
 } from '@nph/contracts';
-import { FieldValue, Timestamp, db, listingRef, storeRef } from './lib/admin';
+import { COL, FieldValue, Timestamp, db, listingRef, storeRef } from './lib/admin';
 import { fail, requireAuth, requireString } from './lib/guards';
 import { fromStore, limitFor } from './lib/subscription';
 
@@ -114,6 +114,32 @@ export const publishListing = onCall<PublishListingRequest, Promise<PublishListi
           'failed-precondition',
           ERROR_CODE.LISTING_INCOMPLETE,
           'A listing needs at least a name and a category before publishing.',
+        );
+      }
+
+      // The category must still exist and still be offered.
+      //
+      // The security rules only check that `categoryId` is a non-empty string,
+      // and a draft can outlive the category it was written against — an
+      // administrator retires one, and every draft still carrying it would
+      // otherwise publish into a category absent from the marketplace nav and
+      // from the dealer's own picker. Reachable only by typing the URL, and
+      // invisible to the dealer who published it.
+      //
+      // Read here rather than in the getAll above because the id comes from the
+      // listing, which that call is fetching. Still legal: Firestore only
+      // requires every read to precede every write, and nothing has been
+      // written yet.
+      const categorySnap = await tx.get(
+        db.collection(COL.categories).doc(listing.categoryId.trim()),
+      );
+      if (!categorySnap.exists || categorySnap.get('active') !== true) {
+        fail(
+          'failed-precondition',
+          ERROR_CODE.LISTING_INCOMPLETE,
+          categorySnap.exists
+            ? 'That category is no longer available. Choose another before publishing.'
+            : 'That category no longer exists. Choose another before publishing.',
         );
       }
       if (typeof listing.priceKobo !== 'number' || listing.priceKobo < 0) {
