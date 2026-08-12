@@ -14,6 +14,7 @@ import {
 import { COL, Timestamp, db, storeRef } from './lib/admin';
 import { fail, requireAuth, requireOneOf } from './lib/guards';
 import { applyVerifiedPayment } from './lib/applyPayment';
+import { fromStore, isEntitled } from './lib/subscription';
 import {
   PAYSTACK_SECRET_KEY,
   PAYSTACK_SIGNATURE_HEADER,
@@ -108,6 +109,27 @@ export const initializePayment = onCall<
       store.status === 'suspended'
         ? 'Your business is suspended. Contact support before subscribing.'
         : 'Your business must be approved before you can subscribe.',
+    );
+  }
+
+  // No downgrade in Phase 1.
+  //
+  // `activate` starts a plan change from the payment date with no proration, so
+  // a yearly dealer buying a monthly plan in month two would pay ₦5,000 to
+  // replace 300 remaining days with 30 — silently destroying what they had
+  // already bought. Refunds are outside Phase 1, so there would be no way to
+  // put it right afterwards.
+  //
+  // The UI never offers this, but the UI is not a security boundary: this
+  // callable is reachable directly with a valid dealer token. Refusing here is
+  // what makes the absence of a downgrade flow a fact rather than an omission.
+  const current = fromStore(store);
+  if (plan === 'monthly' && current.plan === 'yearly' && isEntitled(current, Date.now())) {
+    fail(
+      'failed-precondition',
+      ERROR_CODE.DOWNGRADE_NOT_SUPPORTED,
+      'Your yearly plan is still running. Switching to monthly would end it early, ' +
+        'so it is not available. Contact support if you need to change plan.',
     );
   }
 

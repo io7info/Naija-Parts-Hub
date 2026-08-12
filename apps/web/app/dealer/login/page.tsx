@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
+import { Suspense } from 'react'
 import Link from 'next/link'
 import { Logo } from '@/components/brand/logo'
+import { DealerLoginForm } from './login-form'
 
 export const metadata: Metadata = {
   title: 'Dealer sign in',
@@ -8,34 +10,35 @@ export const metadata: Metadata = {
 }
 
 /**
- * STAGE 1 PLACEHOLDER — no authentication yet.
+ * Phone-OTP sign-in, matching the dealer app's identity.
  *
- * Stage 12 replaces this with Firebase phone-OTP sign-in matching the dealer
- * app. It deliberately contains no mock auth: the prototype's sessionStorage
- * flag was removed rather than migrated, so there is nothing here that could be
- * mistaken for a working sign-in.
+ * This route was a placeholder for most of the project — dealers did everything
+ * in the app, so the website had nobody to authenticate. Subscriptions changed
+ * that: Apple's Guideline 3.1.1 forbids an iOS app pointing at an external
+ * purchase flow, so the iOS build carries no upgrade link and the website is
+ * the only route to a paid plan. A dealer who cannot sign in here cannot pay.
+ *
+ * Suspense because the form reads `?next=` with useSearchParams, which opts the
+ * component into client-side rendering and needs a boundary above it.
  */
 export default function DealerLoginPage() {
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center bg-[color:var(--warm)] px-4">
-      <div className="w-full max-w-sm rounded-xl border border-border bg-card p-8 text-center">
-        <div className="flex justify-center">
-          <Logo />
-        </div>
-        <h1 className="mt-6 font-[family-name:var(--font-heading)] text-xl font-semibold">
-          Dealer sign in
-        </h1>
-        <p className="mt-3 text-sm text-muted-foreground">
-          Phone sign-in for the website is not enabled yet. Dealers manage listings in the Naija
-          Parts Hub mobile app.
-        </p>
-        <Link
-          href="/"
-          className="mt-6 inline-flex h-11 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-[color:var(--orange-hover)]"
-        >
-          Back to marketplace
-        </Link>
-      </div>
+    <div className="flex min-h-dvh flex-col items-center justify-center bg-warm px-4 py-12">
+      <Link href="/" className="mb-6">
+        <Logo />
+      </Link>
+
+      <Suspense
+        fallback={
+          <div className="h-80 w-full max-w-sm animate-pulse rounded-2xl border border-border bg-card" />
+        }
+      >
+        <DealerLoginForm />
+      </Suspense>
+
+      <p className="mt-6 text-xs text-muted-foreground">
+        Operated by Lytod Motors Ltd · RC 1207675
+      </p>
     </div>
   )
 }

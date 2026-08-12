@@ -108,12 +108,47 @@ abstract final class Env {
   static const String supportWhatsapp =
       String.fromEnvironment('SUPPORT_WHATSAPP', defaultValue: '2348031234567');
 
-  /// Shown when a free store hits the 10-listing limit. Web-only by design —
-  /// selling an in-app upgrade would engage App Store Guideline 3.1.1.
+  /// Where a dealer goes to buy or renew a plan.
+  ///
+  /// `/dealer/subscription`, not `/plans`. The latter is the public pricing
+  /// page: it has no sign-in and no pay button, so a dealer sent there sees
+  /// prices and reaches a dead end — which does not satisfy SOW §5 ("the
+  /// upgrade option will be displayed") or §8, both of which require the plan
+  /// to actually be purchasable. `/dealer/subscription` prompts phone sign-in,
+  /// then shows their real plan, expiry, history and a working checkout.
+  ///
+  /// Web-only by design: selling an in-app upgrade would engage App Store
+  /// Guideline 3.1.1 and Apple's cut. On iOS even *linking* here is prohibited
+  /// under the same guideline's anti-steering clause — see [showUpgradeLinks].
   static const String upgradeUrl = String.fromEnvironment(
     'UPGRADE_URL',
-    defaultValue: '$marketplaceOrigin/plans',
+    defaultValue: '$marketplaceOrigin/dealer/subscription',
   );
+
+  /// Whether the app may show a route to payment at all.
+  ///
+  /// App Store Guideline 3.1.1 forbids an iOS app carrying "buttons, external
+  /// links, or other calls to action that direct customers to purchasing
+  /// mechanisms other than in-app purchase". A subscription that raises the
+  /// listing cap from 10 to 200 is in-app content, so on iOS the links come out
+  /// entirely — the plan and usage are still shown, because stating a fact is
+  /// not a call to action.
+  ///
+  /// Android has no such rule and keeps them.
+  ///
+  /// A runtime check, not a compile-time one. Dart exposes no const for the
+  /// target platform, and it does not matter here: Apple reviews the running
+  /// app, and a link that never renders is not a call to action a user can see.
+  ///
+  /// `SHOW_UPGRADE_LINKS` overrides it either way, so the iOS behaviour can be
+  /// exercised from an Android device during review preparation:
+  ///   flutter run --dart-define=SHOW_UPGRADE_LINKS=false
+  static bool get showUpgradeLinks {
+    const override = String.fromEnvironment('SHOW_UPGRADE_LINKS');
+    if (override == 'true') return true;
+    if (override == 'false') return false;
+    return !Platform.isIOS;
+  }
 
   /// Rewrites a Storage download URL so it is reachable from *this* device.
   ///

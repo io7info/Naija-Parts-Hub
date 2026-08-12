@@ -60,7 +60,7 @@ class AccountScreen extends ConsumerWidget {
             NphSettingsRow(
               icon: Icons.workspace_premium_outlined,
               label: 'Plan & Usage',
-              value: store.subscription.isPaid ? 'Paid' : 'Free',
+              value: store.subscription.isPaid() ? 'Paid' : 'Free',
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(builder: (_) => PlanStatusScreen(store: store)),
               ),

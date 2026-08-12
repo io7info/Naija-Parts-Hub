@@ -21,26 +21,78 @@ enum StoreStatus {
   bool get canPublish => this == StoreStatus.approved;
 }
 
+/// Days a lapsed plan keeps its listings live. Mirrors
+/// SUBSCRIPTION_GRACE_DAYS in packages/contracts/src/constants.ts.
+const int kSubscriptionGraceDays = 7;
+
 class Subscription {
-  const Subscription({required this.plan, required this.status, this.expiresAt});
+  const Subscription({
+    required this.plan,
+    required this.status,
+    this.expiresAt,
+    this.graceEndsAt,
+  });
 
   final String plan; // free | monthly | yearly
+  /// As last written by the backend sweep. Prefer [statusNow], which is exact.
   final String status; // none | active | grace | expired
   final DateTime? expiresAt;
+  final DateTime? graceEndsAt;
 
-  bool get isPaid => plan != 'free' && (status == 'active' || status == 'grace');
+  /// The status right now, derived from the dates rather than read.
+  ///
+  /// `status` is maintained by an hourly Cloud Function, so between a plan
+  /// lapsing and the next sweep the stored value still says `active`. Deriving
+  /// it here keeps the dealer's screen honest in that window — otherwise the
+  /// app cheerfully reports an active plan for up to an hour after it ended,
+  /// and then appears to change its mind on its own.
+  ///
+  /// Falls back to the stored value when the dates are missing, which is the
+  /// case for stores created before those fields existed.
+  String statusNow([DateTime? now]) {
+    if (plan == 'free') return 'none';
+    final expiry = expiresAt;
+    if (expiry == null) return status;
+
+    final at = now ?? DateTime.now();
+    if (at.isBefore(expiry)) return 'active';
+
+    final graceEnd =
+        graceEndsAt ?? expiry.add(const Duration(days: kSubscriptionGraceDays));
+    return at.isBefore(graceEnd) ? 'grace' : 'expired';
+  }
+
+  bool isPaid([DateTime? now]) {
+    final s = statusNow(now);
+    return s == 'active' || s == 'grace';
+  }
 
   /// Lapsed but still honoured — listings stay live through the grace window.
-  bool get inGrace => plan != 'free' && status == 'grace';
+  bool inGrace([DateTime? now]) => statusNow(now) == 'grace';
 
   /// Lapsed and no longer honoured. The backend has dropped this store back to
   /// the free allowance, so active listings above 10 have been unpublished.
-  bool get hasExpired => plan != 'free' && status == 'expired';
+  bool hasExpired([DateTime? now]) => statusNow(now) == 'expired';
+
+  /// Whole days until [graceEndsAt], for the countdown a dealer in grace needs.
+  int? graceDaysLeft([DateTime? now]) {
+    if (statusNow(now) != 'grace') return null;
+    final end = graceEndsAt ??
+        expiresAt?.add(const Duration(days: kSubscriptionGraceDays));
+    if (end == null) return null;
+    final remaining = end.difference(now ?? DateTime.now());
+    if (remaining.isNegative) return 0;
+    // Ceiling, so a plan with two hours left reads as "1 day" rather than "0",
+    // and exactly seven days reads as 7 rather than 8. `inHours ~/ 24 + 1`
+    // looks like the same thing and is wrong on every exact boundary.
+    return (remaining.inMilliseconds / Duration.millisecondsPerDay).ceil();
+  }
 
   factory Subscription.fromMap(Map<String, dynamic>? m) => Subscription(
         plan: (m?['plan'] as String?) ?? 'free',
         status: (m?['status'] as String?) ?? 'none',
         expiresAt: (m?['expiresAt'] as Timestamp?)?.toDate(),
+        graceEndsAt: (m?['graceEndsAt'] as Timestamp?)?.toDate(),
       );
 }
 
@@ -95,7 +147,7 @@ class Store {
 
   /// Mirrors activeLimitFor() in functions/src/publishListing.ts.
   /// Display only — the authoritative check happens in the transaction.
-  int get activeListingLimit => subscription.isPaid ? 200 : 10;
+  int get activeListingLimit => subscription.isPaid() ? 200 : 10;
 
   bool get atListingLimit => activeListingCount >= activeListingLimit;
 

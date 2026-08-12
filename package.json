@@ -37,6 +37,7 @@
     "check:binaries": "node scripts/check-binary-integrity.mjs",
     "test:mobile-env": "cd apps/mobile && flutter test test/core/env_switch_test.dart && flutter test test/core/env_switch_test.dart --dart-define=USE_FIREBASE_EMULATOR=false",
     "seed:marketplace": "npm run seed:marketplace --workspace @nph/functions",
+    "dev:subscription": "node scripts/dev-subscription.mjs",
     "seed:prod-categories": "npm run seed:prod-categories --workspace @nph/functions --",
     "bootstrap:prod-admin": "npm run bootstrap:prod-admin --workspace @nph/functions --",
     "test:admin-data": "npm run test:admin-data --workspace @nph/firebase-tests"

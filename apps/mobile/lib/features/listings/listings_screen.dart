@@ -345,10 +345,10 @@ class _ListingsScreenState extends ConsumerState<ListingsScreen>
     final atLimit = used >= limit;
 
     return NphBanner(
-      message: '$used of $limit ${store.subscription.isPaid ? '' : 'free '}listings used',
+      message: '$used of $limit ${store.subscription.isPaid() ? '' : 'free '}listings used',
       tone: atLimit ? NphTone.warning : NphTone.brand,
       icon: atLimit ? Icons.warning_amber_rounded : Icons.inventory_2_outlined,
-      trailing: store.subscription.isPaid
+      trailing: store.subscription.isPaid()
           ? null
           : InkWell(
               onTap: () => Navigator.of(context).push(
@@ -637,7 +637,7 @@ void showListingLimitSheet(
               FilledButton(
                 onPressed: () async {
                   Navigator.of(ctx).pop();
-                  final uri = Uri.parse('${Env.marketplaceOrigin}/plans');
+                  final uri = Uri.parse(Env.upgradeUrl);
                   if (await canLaunchUrl(uri)) {
                     await launchUrl(uri, mode: LaunchMode.externalApplication);
                   }

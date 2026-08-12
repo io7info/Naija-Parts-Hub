@@ -9,6 +9,7 @@ import {
   ListChecks,
   CreditCard,
   Tags,
+  Receipt,
   Menu,
   X,
 } from 'lucide-react'
@@ -21,6 +22,7 @@ const nav = [
   { href: '/admin/verification', label: 'Business Verification', icon: ShieldCheck },
   { href: '/admin/moderation', label: 'Listing Moderation', icon: ListChecks },
   { href: '/admin/subscriptions', label: 'Subscriptions', icon: CreditCard },
+  { href: '/admin/payments', label: 'Payments', icon: Receipt },
   { href: '/admin/categories', label: 'Categories', icon: Tags },
 ]
 

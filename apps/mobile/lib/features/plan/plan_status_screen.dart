@@ -50,7 +50,7 @@ class PlanStatusScreen extends StatelessWidget {
             _hero(context, used: used, limit: limit),
             const SizedBox(height: NphSpacing.xl),
 
-            NphSectionHeader(title: sub.isPaid ? 'Your subscription' : 'Available plans'),
+            NphSectionHeader(title: sub.isPaid() ? 'Your subscription' : 'Available plans'),
             const SizedBox(height: NphSpacing.md),
 
             _PlanCard(
@@ -63,7 +63,7 @@ class PlanStatusScreen extends StatelessWidget {
                 'Unlimited draft listings',
                 'WhatsApp and phone contact',
               ],
-              current: !sub.isPaid,
+              current: !sub.isPaid(),
             ),
             const SizedBox(height: NphSpacing.md),
             _PlanCard(
@@ -77,7 +77,7 @@ class PlanStatusScreen extends StatelessWidget {
                 'Renew monthly',
               ],
               highlight: true,
-              current: sub.isPaid && sub.plan == 'monthly',
+              current: sub.isPaid() && sub.plan == 'monthly',
             ),
             const SizedBox(height: NphSpacing.md),
             _PlanCard(
@@ -90,43 +90,104 @@ class PlanStatusScreen extends StatelessWidget {
                 'Two months free versus monthly',
                 'Renew yearly',
               ],
-              current: sub.isPaid && sub.plan == 'yearly',
+              current: sub.isPaid() && sub.plan == 'yearly',
             ),
-
-            if (sub.expiresAt != null) ...[
-              const SizedBox(height: NphSpacing.xl),
-              NphBanner(
-                message: sub.status == 'grace'
-                    ? 'Your plan lapsed on ${_date.format(sub.expiresAt!)}. Renew to keep '
-                        'your listings live.'
-                    : 'Renews on ${_date.format(sub.expiresAt!)}.',
-                tone: sub.status == 'grace' ? NphTone.warning : NphTone.neutral,
-                icon: Icons.event_outlined,
-              ),
-            ],
 
             const SizedBox(height: NphSpacing.xl),
-            FilledButton(
-              onPressed: _openWeb,
-              child: Text(sub.isPaid ? 'Manage plan on website' : 'Upgrade on website'),
-            ),
-            const SizedBox(height: NphSpacing.md),
-            const Text(
-              'Subscriptions are billed securely through Paystack on the Naija Parts Hub '
-              'website. Payment is never handled inside this app.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: NphFonts.body,
-                fontSize: 12,
-                height: 1.5,
-                color: NphColors.mutedForeground,
+            _statusBanner(sub),
+
+            const SizedBox(height: NphSpacing.xl),
+
+            // On iOS this whole block is absent. App Store Guideline 3.1.1
+            // prohibits "buttons, external links, or other calls to action that
+            // direct customers to purchasing mechanisms other than in-app
+            // purchase", and a subscription raising the listing cap from 10 to
+            // 200 is in-app content. The plans, prices and the dealer's own
+            // status above stay — stating what something costs is not a call to
+            // action, and hiding it would leave an iOS dealer unable to find
+            // out why their limit is 10.
+            if (Env.showUpgradeLinks) ...[
+              FilledButton(
+                onPressed: _openWeb,
+                child: Text(sub.isPaid() ? 'Manage plan on website' : 'Upgrade on website'),
               ),
-            ),
+              const SizedBox(height: NphSpacing.md),
+              const Text(
+                'Subscriptions are billed securely through Paystack on the Naija Parts Hub '
+                'website. Payment is never handled inside this app.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: NphFonts.body,
+                  fontSize: 12,
+                  height: 1.5,
+                  color: NphColors.mutedForeground,
+                ),
+              ),
+            ] else
+              const Text(
+                'Plans are managed from your account on the Naija Parts Hub website.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: NphFonts.body,
+                  fontSize: 12,
+                  height: 1.5,
+                  color: NphColors.mutedForeground,
+                ),
+              ),
             const SizedBox(height: NphSpacing.xl),
           ],
         ),
       ),
     );
+  }
+
+  /// Where this dealer stands, in the four states the backend can produce.
+  ///
+  /// Derived from the dates via `statusNow()` rather than read from the stored
+  /// `status` field. That field is maintained by an hourly Cloud Function, so
+  /// between a plan lapsing and the next sweep it still says `active` — and a
+  /// screen that reports an active plan for an hour after it ended, then
+  /// appears to change its mind unprompted, is worse than one that is simply
+  /// right.
+  Widget _statusBanner(Subscription sub) {
+    switch (sub.statusNow()) {
+      case 'active':
+        return NphBanner(
+          message: 'Your ${sub.plan} plan renews on ${_date.format(sub.expiresAt!)}.',
+          tone: NphTone.success,
+          icon: Icons.event_available_outlined,
+        );
+
+      case 'grace':
+        final days = sub.graceDaysLeft() ?? 0;
+        return NphBanner(
+          message: 'Your plan lapsed on ${_date.format(sub.expiresAt!)}. '
+              'Your listings stay live for $days more day${days == 1 ? '' : 's'} — '
+              'renew before then and nothing changes.',
+          tone: NphTone.warning,
+          icon: Icons.timelapse_outlined,
+        );
+
+      case 'expired':
+        // The most important message on this screen. A dealer who published 40
+        // parts and now sees 10 needs to know what happened to the other 30,
+        // and above all that they still exist.
+        return NphBanner(
+          message: 'Your plan expired on ${_date.format(sub.expiresAt!)} and the grace '
+              'period has passed. Your store is back to the free 10 active listings: '
+              'the 10 most recently published stayed live and the rest were moved back '
+              'to Drafts. Nothing was deleted — renew and you can publish them again.',
+          tone: NphTone.error,
+          icon: Icons.error_outline,
+        );
+
+      default:
+        return const NphBanner(
+          message: 'You are on the free plan — 10 active listings, no expiry.',
+          tone: NphTone.neutral,
+          icon: Icons.info_outline,
+        );
+    }
   }
 
   Widget _hero(BuildContext context, {required int used, required int limit}) {
@@ -188,7 +249,7 @@ class PlanStatusScreen extends StatelessWidget {
   }
 
   Future<void> _openWeb() async {
-    final uri = Uri.parse('${Env.marketplaceOrigin}/plans');
+    final uri = Uri.parse(Env.upgradeUrl);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }

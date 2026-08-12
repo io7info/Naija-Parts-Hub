@@ -219,3 +219,71 @@ export async function listSubscriptions(): Promise<AdminSubscription[]> {
       return a.store.localeCompare(b.store)
     })
 }
+
+export type AdminPayment = {
+  reference: string
+  storeId: string
+  store: string
+  plan: string
+  amount: number
+  status: string
+  paystackStatus: string | null
+  channel: string | null
+  initializedAt: string
+  verifiedAt: string | null
+  verifiedVia: string | null
+  /** Money moved but no subscription was granted. The row that needs a human. */
+  needsSupport: boolean
+}
+
+/**
+ * Every Paystack transaction (SOW §9, "Paystack payment-reference review").
+ *
+ * Read through the Admin SDK because it spans all dealers, which no client
+ * query is permitted to do — `payments` allows a dealer to read only their own.
+ *
+ * The store name is joined in from `stores`, because a reference alone is
+ * useless during a support call: the caller says "I paid on Tuesday", not
+ * "nph-mf3k2-a91c".
+ */
+export async function listPayments(limit = 200): Promise<AdminPayment[]> {
+  const snapshot = await getAdminDb()
+    .collection('payments')
+    .orderBy('initializedAt', 'desc')
+    .limit(limit)
+    .get()
+
+  if (snapshot.empty) return []
+
+  // One read per distinct store rather than per payment: a dealer renewing
+  // monthly for a year is twelve rows and one business.
+  const storeIds = [...new Set(snapshot.docs.map((d) => d.get('storeId') as string))]
+  const stores = await getAdminDb().getAll(
+    ...storeIds.map((id) => getAdminDb().collection('stores').doc(id)),
+  )
+  const names = new Map(
+    stores.map((s) => [s.id, (s.get('businessName') as string) ?? '(deleted store)']),
+  )
+
+  return snapshot.docs.map((doc) => {
+    const d = doc.data() as Doc
+    const status = (d.status as string) ?? 'pending'
+    return {
+      reference: doc.id,
+      storeId: (d.storeId as string) ?? '',
+      store: names.get(d.storeId as string) ?? '(deleted store)',
+      plan: (d.plan as string) ?? '—',
+      amount: koboToNaira(d.amountKobo as number),
+      status,
+      paystackStatus: (d.paystackStatus as string) ?? null,
+      channel: (d.channel as string) ?? null,
+      initializedAt: formatDate(d.initializedAt),
+      verifiedAt: d.verifiedAt ? formatDate(d.verifiedAt) : null,
+      verifiedVia: (d.verifiedVia as string) ?? null,
+      // Succeeded at Paystack, never applied here. Rare, not self-correcting,
+      // and the dealer has been charged — so it is surfaced rather than left to
+      // be noticed.
+      needsSupport: status === 'success' && !d.subscriptionAppliedAt,
+    }
+  })
+}

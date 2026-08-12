@@ -148,7 +148,7 @@ class MyStoreScreen extends ConsumerWidget {
             NphSettingsRow(
               icon: Icons.workspace_premium_outlined,
               label: 'Plan',
-              value: store.subscription.isPaid
+              value: store.subscription.isPaid()
                   ? '${store.subscription.plan[0].toUpperCase()}'
                       '${store.subscription.plan.substring(1)}'
                   : 'Free',

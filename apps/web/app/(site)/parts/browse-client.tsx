@@ -24,8 +24,7 @@ const sortLabels: Record<Sort, string> = {
  * Marketplace browsing.
  *
  * Search, category, state and condition live in the URL and are answered by
- * Firestore; price, vehicle make and "verified only" are refined here over the
- * fetched page.
+ * Firestore; price and vehicle make are refined here over the fetched page.
  *
  * The split is not arbitrary. Filtering entirely in the browser was wrong, not
  * just slow: with 120 listings downloaded and the rest never fetched, a buyer
@@ -33,15 +32,12 @@ const sortLabels: Record<Sort, string> = {
  * four URL filters now have composite indexes for every combination, so their
  * answers come from the whole collection.
  *
- * The remaining three are a known Phase 1 limitation, stated rather than
- * hidden. Price, vehicle make and "verified only" have no index and no URL
- * parameter, so they narrow the fetched page only. Two things keep that
- * honest: they can only ever remove rows from an already-correct server-side
- * result, and `truncated` tells the buyer when they are looking at a page
- * rather than the whole market. If the catalogue grows past the point where
- * that reads as adequate, they want indexes and URL parameters of their own —
- * "verified only" in particular is currently a no-op, since every publicly
- * visible listing belongs to an approved dealer by construction.
+ * The remaining two are a known Phase 1 limitation, stated rather than hidden.
+ * Price and vehicle make have no index and no URL parameter, so they narrow the
+ * fetched page only. Two things keep that honest: they can only ever remove
+ * rows from an already-correct server-side result, and `truncated` tells the
+ * buyer when they are looking at a page rather than the whole market. If the
+ * catalogue outgrows that, they want indexes and URL parameters of their own.
  *
  * URL-driven also means a category tile, a shared link and the back button all
  * work, and a crawler sees a real filtered page.
@@ -75,7 +71,6 @@ export function BrowseClient({
   const [selectedMakes, setSelectedMakes] = useState<string[]>([])
   const [minPrice, setMinPrice] = useState('')
   const [maxPrice, setMaxPrice] = useState('')
-  const [verifiedOnly, setVerifiedOnly] = useState(false)
   const [sort, setSort] = useState<Sort>('relevant')
   const [layout, setLayout] = useState<'grid' | 'list'>('grid')
   const [showFilters, setShowFilters] = useState(false)
@@ -97,7 +92,6 @@ export function BrowseClient({
     setSelectedMakes([])
     setMinPrice('')
     setMaxPrice('')
-    setVerifiedOnly(false)
     startTransition(() => router.push('/parts', { scroll: false }))
   }
 
@@ -118,7 +112,6 @@ export function BrowseClient({
       if (selectedMakes.length && !selectedMakes.includes(p.vehicleMake)) return false
       if (minPrice && p.price < Number(minPrice)) return false
       if (maxPrice && p.price > Number(maxPrice)) return false
-      if (verifiedOnly && !p.verified) return false
       return true
     })
     if (sort === 'low') list = [...list].sort((a, b) => a.price - b.price)
@@ -126,7 +119,7 @@ export function BrowseClient({
     // 'relevant' and 'newest' both keep the server's order, which is
     // createdAt descending.
     return list
-  }, [products, query, initialQuery, unapplied, selectedMakes, minPrice, maxPrice, verifiedOnly, sort])
+  }, [products, query, initialQuery, unapplied, selectedMakes, minPrice, maxPrice, sort])
 
   const activeCategory = categories.find((c) => c.id === initialCategory)
   const heading = initialQuery
@@ -205,16 +198,12 @@ export function BrowseClient({
         ))}
       </FilterGroup>
 
-      <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2.5">
-        <input
-          type="checkbox"
-          checked={verifiedOnly}
-          onChange={(e) => setVerifiedOnly(e.target.checked)}
-          className="size-4 accent-orange"
-        />
-        <span className="text-sm font-medium text-foreground">Verified sellers only</span>
-      </label>
-
+      {/* No "Verified sellers only" control.
+          Every publicly visible listing already belongs to an approved,
+          visible dealer — publiclyVisible is false otherwise — so the filter
+          could never remove a row. A control that appears to narrow results
+          and cannot is worse than no control: a buyer who ticks it and sees
+          the same list concludes the filters do not work. */}
       <button
         type="button"
         onClick={clearAll}
