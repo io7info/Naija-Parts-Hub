@@ -1,7 +1,6 @@
 import { onCall } from 'firebase-functions/v2/https';
 import {
   ERROR_CODE,
-  FREE_ACTIVE_LISTING_LIMIT,
   PAID_ACTIVE_LISTING_LIMIT,
   generateSearchTokens,
   type PublishListingRequest,
@@ -9,8 +8,9 @@ import {
   type Store,
   type Listing,
 } from '@nph/contracts';
-import { FieldValue, Timestamp, db, listingRef, storeRef } from './lib/admin';
+import { COL, FieldValue, Timestamp, db, listingRef, storeRef } from './lib/admin';
 import { fail, requireAuth, requireString } from './lib/guards';
+import { fromStore, limitFor } from './lib/subscription';
 
 const UPGRADE_URL = process.env.UPGRADE_URL ?? 'https://naijapartshub.ng/upgrade';
 
@@ -18,13 +18,17 @@ const UPGRADE_URL = process.env.UPGRADE_URL ?? 'https://naijapartshub.ng/upgrade
  * Entitlement ceiling for a store's current plan.
  *
  * A lapsed paid plan still counts as paid while inside its grace window, so a
- * dealer whose card fails on a Friday does not have listings pulled down over
- * the weekend.
+ * dealer whose payment slips on a Friday does not have listings pulled down
+ * over the weekend.
+ *
+ * Derived from `expiresAt` rather than read from the stored `status`. That
+ * field is only as fresh as the last nightly sweep, so between expiry and the
+ * next run it still says `active` — and publishing is exactly where that gap
+ * would be exploited, since a dealer who notices could add 190 listings on a
+ * subscription that ended hours ago.
  */
-export function activeLimitFor(store: Pick<Store, 'subscription'>): number {
-  const { plan, status } = store.subscription;
-  const paid = plan !== 'free' && (status === 'active' || status === 'grace');
-  return paid ? PAID_ACTIVE_LISTING_LIMIT : FREE_ACTIVE_LISTING_LIMIT;
+export function activeLimitFor(store: Pick<Store, 'subscription'>, now = Date.now()): number {
+  return limitFor(fromStore(store), now);
 }
 
 /**
@@ -110,6 +114,32 @@ export const publishListing = onCall<PublishListingRequest, Promise<PublishListi
           'failed-precondition',
           ERROR_CODE.LISTING_INCOMPLETE,
           'A listing needs at least a name and a category before publishing.',
+        );
+      }
+
+      // The category must still exist and still be offered.
+      //
+      // The security rules only check that `categoryId` is a non-empty string,
+      // and a draft can outlive the category it was written against — an
+      // administrator retires one, and every draft still carrying it would
+      // otherwise publish into a category absent from the marketplace nav and
+      // from the dealer's own picker. Reachable only by typing the URL, and
+      // invisible to the dealer who published it.
+      //
+      // Read here rather than in the getAll above because the id comes from the
+      // listing, which that call is fetching. Still legal: Firestore only
+      // requires every read to precede every write, and nothing has been
+      // written yet.
+      const categorySnap = await tx.get(
+        db.collection(COL.categories).doc(listing.categoryId.trim()),
+      );
+      if (!categorySnap.exists || categorySnap.get('active') !== true) {
+        fail(
+          'failed-precondition',
+          ERROR_CODE.LISTING_INCOMPLETE,
+          categorySnap.exists
+            ? 'That category is no longer available. Choose another before publishing.'
+            : 'That category no longer exists. Choose another before publishing.',
         );
       }
       if (typeof listing.priceKobo !== 'number' || listing.priceKobo < 0) {

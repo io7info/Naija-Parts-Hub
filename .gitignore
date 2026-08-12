@@ -129,3 +129,7 @@ playwright-report/
 # Next.js
 apps/web/.next/
 apps/web/out/
+
+# Port-shifted emulator config, generated when running test suites alongside a
+# development emulator. Transient — never part of a commit.
+firebase.testports.json

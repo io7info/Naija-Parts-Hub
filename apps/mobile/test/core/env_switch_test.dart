@@ -14,6 +14,8 @@ import 'package:naija_parts_hub/firebase_options.dart';
 /// Both are wired into `npm run test:mobile-env`. A switch that is only ever
 /// exercised in one direction is not a switch, it is a default.
 void main() {
+  _upgradeLinkTests();
+
   group('environment switch', () {
     test('resolves exactly one environment, consistently', () {
       // The enum and the boolean must never disagree; feature code reads both.
@@ -120,6 +122,40 @@ void main() {
         DefaultFirebaseOptions.android.appId,
         isNot(DefaultFirebaseOptions.ios.appId),
       );
+    });
+  });
+}
+
+/// App Store Guideline 3.1.1 — the upgrade links.
+///
+/// Apple prohibits "buttons, external links, or other calls to action that
+/// direct customers to purchasing mechanisms other than in-app purchase". A
+/// subscription that raises the listing cap from 10 to 200 is in-app content,
+/// so on iOS every route to payment comes out — and a regression here is an App
+/// Store rejection, which costs days per round trip rather than a bug report.
+///
+/// The platform default cannot be asserted from a test binding, which reports
+/// the host rather than a device. What can be pinned down is the override that
+/// makes the iOS behaviour reviewable from any machine, and where the links
+/// point when they are shown.
+void _upgradeLinkTests() {
+  group('upgrade links', () {
+    test('point at the dealer subscription page, not the public price list', () {
+      // /plans has no sign-in and no pay button, so a dealer sent there sees
+      // prices and reaches a dead end — which satisfies neither SOW §5 ("the
+      // upgrade option will be displayed") nor §8.
+      expect(Env.upgradeUrl, endsWith('/dealer/subscription'));
+      expect(Env.upgradeUrl, isNot(endsWith('/plans')));
+    });
+
+    test('resolve against the marketplace origin', () {
+      expect(Env.upgradeUrl, startsWith(Env.marketplaceOrigin));
+    });
+
+    test('are shown by default on this host', () {
+      // The suite runs on desktop, where Platform.isIOS is false. This asserts
+      // the non-Apple branch rather than the platform itself.
+      expect(Env.showUpgradeLinks, isTrue);
     });
   });
 }

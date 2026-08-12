@@ -67,6 +67,18 @@ before(async () => {
     const snap = await adminDb.collection(c).get();
     await Promise.all(snap.docs.map((d) => d.ref.delete()));
   }
+
+  // The taxonomy, because publishListing now requires the listing's category to
+  // exist and still be active. Production always has these — the seed script
+  // creates them before any dealer registers — so a fixture without them was
+  // testing a state the app never runs in.
+  await adminDb.doc('categories/brake').set({
+    categoryId: 'brake',
+    name: 'Brake',
+    slug: 'brake',
+    order: 2,
+    active: true,
+  });
   await adminAuth.deleteUser(DEALER_UID).catch(() => {});
   await adminAuth.createUser({ uid: DEALER_UID, phoneNumber: '+2348031234567' });
 });
@@ -296,5 +308,86 @@ describe('dealer onboarding end to end', () => {
     // Signed in as admin at this point, so the read succeeds; the rules tests
     // cover the unauthenticated case exhaustively.
     assert.equal(snap.exists(), true);
+  });
+});
+
+describe('publishing into a retired category', () => {
+  // Two pieces of state left by earlier tests, both of which would refuse the
+  // publish before it ever reached the category check being tested here:
+  // the client is signed in as the administrator, and the store was suspended
+  // to prove suspension hides listings.
+  before(async () => {
+    await signInAsDealer();
+    await adminDb.doc(`stores/${DEALER_UID}`).update({ status: 'approved', visible: true });
+  });
+
+  /** A draft in the given category, written the way the app writes one. */
+  async function draft(id, categoryId) {
+    await setDoc(doc(clientDb, `listings/${id}`), {
+      storeId: DEALER_UID,
+      status: 'draft',
+      name: 'Retired-category part',
+      description: '',
+      categoryId,
+      condition: 'new',
+      priceKobo: 100000,
+      quantity: 1,
+      brand: '',
+      partNumber: '',
+      compatibleMake: '',
+      compatibleModel: '',
+      images: [],
+      updatedAt: new Date(),
+    });
+  }
+
+  it('refuses a category an administrator has deactivated', async () => {
+    // A draft can outlive the category it was written against. Publishing it
+    // anyway would put it in a category absent from the marketplace nav and
+    // from the dealer's own picker — reachable only by typing the URL, and
+    // invisible to the dealer who published it.
+    await adminDb.doc('categories/retired').set({
+      categoryId: 'retired',
+      name: 'Retired',
+      slug: 'retired',
+      order: 99,
+      active: false,
+    });
+    await draft('e2e-retired', 'retired');
+
+    await assert.rejects(
+      () => httpsCallable(fns, 'publishListing')({ listingId: 'e2e-retired' }),
+      (err) => /no longer available/i.test(err.message),
+    );
+
+    assert.equal((await adminDb.doc('listings/e2e-retired').get()).data().status, 'draft');
+  });
+
+  it('refuses a category that does not exist at all', async () => {
+    await draft('e2e-ghost', 'no-such-category');
+
+    await assert.rejects(
+      () => httpsCallable(fns, 'publishListing')({ listingId: 'e2e-ghost' }),
+      (err) => /no longer exists/i.test(err.message),
+    );
+  });
+
+  it('checks the category before the listing limit', async () => {
+    // Ordering matters for the message the dealer sees. By this point the store
+    // is at its free limit, so a category check placed after the limit check
+    // would report "upgrade your plan" for a listing whose real problem is a
+    // retired category — sending them to a payment page that would not fix it.
+    const countBefore = (await adminDb.doc(`stores/${DEALER_UID}`).get()).data()
+      .activeListingCount;
+
+    await draft('e2e-ghost-2', 'still-no-such-category');
+    await assert.rejects(
+      () => httpsCallable(fns, 'publishListing')({ listingId: 'e2e-ghost-2' }),
+      (err) => /category/i.test(err.message) && !/limit|plan/i.test(err.message),
+    );
+
+    const countAfter = (await adminDb.doc(`stores/${DEALER_UID}`).get()).data()
+      .activeListingCount;
+    assert.equal(countAfter, countBefore, 'a refused publish must not consume a slot');
   });
 });

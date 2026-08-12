@@ -76,7 +76,7 @@ class HomeScreen extends ConsumerWidget {
             ),
             child: _planCard(context, ref),
           ),
-          if (store.subscription.hasExpired || store.subscription.inGrace) ...[
+          if (store.subscription.hasExpired() || store.subscription.inGrace()) ...[
             const SizedBox(height: NphSpacing.lg),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: NphSpacing.appPage),
@@ -182,7 +182,7 @@ class HomeScreen extends ConsumerWidget {
   Widget _planCard(BuildContext context, WidgetRef ref) {
     final limit = store.activeListingLimit;
     final used = store.activeListingCount;
-    final planName = store.subscription.isPaid
+    final planName = store.subscription.isPaid()
         ? '${store.subscription.plan[0].toUpperCase()}'
             '${store.subscription.plan.substring(1)} Plan'
         : 'Free Plan';
@@ -233,20 +233,23 @@ class HomeScreen extends ConsumerWidget {
             const SizedBox(height: NphSpacing.md),
             NphProgressBar(value: limit == 0 ? 0 : used / limit, onDark: true),
             const SizedBox(height: NphSpacing.md),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                // "on Website", not "Upgrade". Selling a subscription in-app
-                // engages App Store Guideline 3.1.1, which requires Apple's
-                // in-app purchase for digital goods. ADR-001 open item #3 keeps
-                // the paid upgrade on the web for exactly that reason.
-                onPressed: _openPlansPage,
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(NphSize.buttonHeightSmall),
+            // Absent on iOS. "on Website" was an attempt to soften this, but
+            // App Store Guideline 3.1.1 bars the *link*, not the wording: a
+            // button that opens an external page selling a subscription is a
+            // call to action to a purchasing mechanism other than in-app
+            // purchase. The plan name and usage above stay, because they state
+            // a fact rather than direct anyone anywhere.
+            if (Env.showUpgradeLinks)
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _openPlansPage,
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(NphSize.buttonHeightSmall),
+                  ),
+                  child: const Text('Manage Plan on Website'),
                 ),
-                child: const Text('Manage Plan on Website'),
               ),
-            ),
           ],
         ),
       ),
@@ -260,29 +263,38 @@ class HomeScreen extends ConsumerWidget {
   /// already dropped them to the free allowance and unpublished the excess. A
   /// single "subscription problem" message would hide that.
   Widget _subscriptionBanner(BuildContext context) {
-    final expired = store.subscription.hasExpired;
+    final expired = store.subscription.hasExpired();
+    // The wording changes with the platform, not just the button. "Renew on the
+    // website" is itself a direction to an external purchasing mechanism, so on
+    // iOS the message states what happened and stops there.
+    final web = Env.showUpgradeLinks;
     return NphBanner(
       message: expired
           ? 'Your plan has expired. Listings above the free limit of '
-              '${store.activeListingLimit} have been unpublished — renew on the '
-              'website to put them back.'
-          : 'Your plan has lapsed. Your listings are still live for now. Renew '
-              'on the website to keep them published.',
+              '${store.activeListingLimit} have been moved back to Drafts'
+              '${web ? ' — renew on the website to publish them again.' : '.'}'
+          : 'Your plan has lapsed. Your listings are still live for now'
+              '${web ? ' — renew on the website to keep them published.' : '.'}',
       tone: expired ? NphTone.error : NphTone.warning,
       icon: expired ? Icons.error_outline : Icons.schedule,
-      trailing: TextButton(
-        onPressed: _openPlansPage,
-        style: TextButton.styleFrom(
-          foregroundColor: expired ? NphColors.error : NphColors.warning,
-          padding: const EdgeInsets.symmetric(horizontal: NphSpacing.sm),
-        ),
-        child: const Text('Renew'),
-      ),
+      // Same rule as the plan card: a Renew button opening an external payment
+      // page is steering. The message itself stays on every platform — a dealer
+      // whose listings came down is entitled to know why.
+      trailing: Env.showUpgradeLinks
+          ? TextButton(
+              onPressed: _openPlansPage,
+              style: TextButton.styleFrom(
+                foregroundColor: expired ? NphColors.error : NphColors.warning,
+                padding: const EdgeInsets.symmetric(horizontal: NphSpacing.sm),
+              ),
+              child: const Text('Renew'),
+            )
+          : null,
     );
   }
 
   Future<void> _openPlansPage() async {
-    final uri = Uri.parse('${Env.marketplaceOrigin}/plans');
+    final uri = Uri.parse(Env.upgradeUrl);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
