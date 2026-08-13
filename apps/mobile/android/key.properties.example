@@ -1,0 +1,45 @@
+# Android release signing — copy to key.properties and fill in.
+#
+# key.properties, *.jks and *.keystore are all gitignored. This example is the
+# only one of the four that belongs in the repository.
+#
+# ---------------------------------------------------------------------------
+# 1. Create the upload keystore, ONCE, somewhere outside this repository.
+#
+#    PowerShell (^ is cmd's line continuation; in PowerShell use ` or one line):
+#
+#      keytool -genkeypair -v -keystore C:\Users\<you>\keys\nph-upload.jks `
+#        -storetype JKS -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+#
+#    -storetype JKS is explicit because modern JDKs default to PKCS12, which
+#    works but emits a conversion warning on every build.
+#
+#    -validity 10000 is ~27 years. Google requires a key valid past 22 October
+#    2033 and recommends at least 25 years; a key that expires means you can
+#    never ship another update under the same listing.
+#
+# 2. Back the keystore up somewhere durable and private — a password manager
+#    with file attachments, or an encrypted archive. This is the UPLOAD key, so
+#    losing it is recoverable: Play support can reset it, provided Play App
+#    Signing is enabled. The APP SIGNING key Google holds cannot be replaced at
+#    all, which is the whole reason Play App Signing exists.
+#
+# 3. Enable Play App Signing when you create the Play Console listing. You
+#    upload bundles signed with the key above; Google re-signs them for
+#    distribution with a key it keeps.
+#
+# 4. Build the bundle Play wants — an AAB, not an APK:
+#
+#      flutter build appbundle --release
+#
+#    The APK is for sideloading onto a test device.
+# ---------------------------------------------------------------------------
+
+storePassword=
+keyPassword=
+keyAlias=upload
+
+# Absolute path, forward slashes even on Windows. Resolved relative to
+# apps/mobile/android/ if relative, so an absolute path outside the repository
+# is the safer choice.
+storeFile=C:/Users/<you>/keys/nph-upload.jks
