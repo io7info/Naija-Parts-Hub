@@ -33,8 +33,15 @@ export interface Payment {
   initializedAt: Timestamp;
   verifiedAt: Timestamp | null;
 
-  /** Which path confirmed the payment — useful when the two race. */
-  verifiedVia: 'webhook' | 'callback' | null;
+  /**
+   * Which path confirmed the payment.
+   *
+   * 'webhook' and 'callback' race by design. 'reconciliation' means neither
+   * arrived and the hourly job had to ask Paystack directly — which is worth
+   * distinguishing, because a payment that only ever settles this way points at
+   * a webhook that is not being delivered.
+   */
+  verifiedVia: 'webhook' | 'callback' | 'reconciliation' | null;
 
   /** Set when activation succeeded, so replays are trivially detectable. */
   subscriptionAppliedAt: Timestamp | null;
