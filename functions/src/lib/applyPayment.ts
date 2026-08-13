@@ -28,7 +28,10 @@ export type ApplyOutcome =
 
 export async function applyVerifiedPayment(
   verification: VerifyResult,
-  via: 'webhook' | 'callback',
+  // 'reconciliation' is the hourly job asking Paystack directly when neither
+  // fast path reported back. Same activation, different provenance — and a
+  // payment that only ever settles that way means the webhook is not arriving.
+  via: 'webhook' | 'callback' | 'reconciliation',
   now: number = Date.now(),
 ): Promise<ApplyOutcome> {
   const paymentRef = db.collection(COL.payments).doc(verification.reference);
