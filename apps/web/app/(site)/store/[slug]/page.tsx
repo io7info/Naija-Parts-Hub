@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { SITE_DOMAIN } from '@nph/contracts'
 import { notFound } from 'next/navigation'
 import { MapPin, Phone, CalendarDays, Package, ShieldCheck } from 'lucide-react'
 import { VerifiedBadge } from '@/components/brand/badges'
@@ -133,7 +134,7 @@ export default async function WebStorePage({ params }: { params: Promise<{ slug:
               </div>
             )}
             <p className="px-1 text-xs text-muted-foreground">
-              Store URL: naijapartshub.com/store/{store.slug}
+              Store URL: {SITE_DOMAIN}/store/{store.slug}
             </p>
             <Link
               href="/stores"

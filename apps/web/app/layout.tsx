@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next'
+import { SITE_ORIGIN } from '@nph/contracts'
 import localFont from 'next/font/local'
 import './globals.css'
 
@@ -33,7 +34,11 @@ const manrope = localFont({
   display: 'swap',
 })
 
-export const SITE_URL = 'https://naijapartshub.com'
+// Re-exported rather than redefined: the canonical origin lives in
+// @nph/contracts so the backend, the web app and the Flutter app cannot
+// disagree about where this product is. metadataBase and every child route's
+// canonical URL resolve against it.
+export const SITE_URL = SITE_ORIGIN
 
 export const metadata: Metadata = {
   // metadataBase makes every relative canonical/OG URL in child routes resolve

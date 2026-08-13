@@ -67,7 +67,7 @@ export interface Store extends StoreProfileInput {
   // --- Backend-controlled below this line ---------------------------------
   // Dealers have read-only access. Enforced by security rules; see security.ts.
 
-  /** Public URL segment: naijapartshub.ng/store/{slug}. SOW §6. */
+  /** Public URL segment: naijapartshub.com/store/{slug}. SOW §6. */
   slug: string;
   status: StoreStatus;
   /** Set by admin when status is 'rejected'. Surfaced to the dealer. */

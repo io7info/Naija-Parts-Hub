@@ -87,17 +87,21 @@ abstract final class Env {
   static const String functionsRegion =
       String.fromEnvironment('FUNCTIONS_REGION', defaultValue: 'us-central1');
 
-  /// Public marketplace origin — storefronts, product pages, and the plan
-  /// upgrade flow all live here.
+  /// Public marketplace origin — storefronts, product pages, share links and
+  /// the plan upgrade flow all resolve against it.
   ///
-  /// One constant rather than a URL literal per call site: the project has
-  /// already accumulated three spellings of its own domain (naijahubparts.ng in
-  /// the SOW, naijapartshub.ng here, naijapartshub.com in the web app), and
-  /// scattering them makes the eventual correction a search-and-replace across
-  /// two languages.
+  /// Mirrors SITE_ORIGIN in packages/contracts/src/constants.ts. Dart cannot
+  /// import TypeScript, so scripts/check-rules-sync.mjs fails when the two
+  /// drift, and rejects a `.ng` literal reappearing in either.
+  ///
+  /// The project accumulated three spellings of its own domain — naijahubparts
+  /// in the SOW, naijapartshub.ng here and in the backend, naijapartshub.com in
+  /// the web app. Only the `.com` was ever registered, and the `.ng` reached
+  /// the Paystack return URL: a dealer completed checkout and landed on a
+  /// domain that does not resolve, with no way to tell whether they had paid.
   static const String marketplaceOrigin = String.fromEnvironment(
     'MARKETPLACE_ORIGIN',
-    defaultValue: 'https://naijapartshub.ng',
+    defaultValue: 'https://naijapartshub.com',
   );
 
   /// Support line, digits only for `wa.me`.

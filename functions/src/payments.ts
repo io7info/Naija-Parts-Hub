@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { onCall } from 'firebase-functions/v2/https';
 import { onRequest } from 'firebase-functions/v2/https';
 import {
+  DEALER_EMAIL_DOMAIN,
   ERROR_CODE,
   HANDLED_PAYSTACK_EVENTS,
   PLANS,
@@ -15,6 +16,7 @@ import { COL, Timestamp, db, storeRef } from './lib/admin';
 import { fail, requireAuth, requireOneOf } from './lib/guards';
 import { applyVerifiedPayment } from './lib/applyPayment';
 import { fromStore, isEntitled } from './lib/subscription';
+import { billingUrl, siteOrigin } from './lib/site';
 import {
   PAYSTACK_SECRET_KEY,
   PAYSTACK_SIGNATURE_HEADER,
@@ -42,9 +44,6 @@ import {
  * so whichever loses is a no-op rather than a second month.
  */
 
-/** Where Paystack sends the dealer back. Origin is ours, never the caller's. */
-const MARKETPLACE_ORIGIN = process.env.MARKETPLACE_ORIGIN ?? 'https://naijapartshub.ng';
-
 /**
  * A reference we will recognise later.
  *
@@ -68,7 +67,7 @@ function newReference(): string {
  */
 function customerEmail(storeId: string, store: Store): string {
   const email = store.email?.trim();
-  return email && email.includes('@') ? email : `store-${storeId}@dealers.naijapartshub.ng`;
+  return email && email.includes('@') ? email : `store-${storeId}@${DEALER_EMAIL_DOMAIN}`;
 }
 
 /**
@@ -81,9 +80,9 @@ function customerEmail(storeId: string, store: Store): string {
  */
 function callbackUrl(path: string | undefined): string {
   if (!path || !path.startsWith('/') || path.startsWith('//')) {
-    return `${MARKETPLACE_ORIGIN}/dealer/subscription/callback`;
+    return `${billingUrl()}/callback`;
   }
-  return `${MARKETPLACE_ORIGIN}${path}`;
+  return `${siteOrigin()}${path}`;
 }
 
 export const initializePayment = onCall<

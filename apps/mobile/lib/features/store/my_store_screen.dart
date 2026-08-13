@@ -318,7 +318,7 @@ class MyStoreScreen extends ConsumerWidget {
   /// This deliberately does not live in the settings group below. A settings
   /// row puts its value on the right of its label and ellipsises what does not
   /// fit, so on a 320dp handset a real slug renders as
-  /// "naijapartshub.ng/store/ladipo-auto-sp…" — unreadable, uncopyable by eye,
+  /// "naijapartshub.com/store/ladipo-auto-s…" — unreadable, uncopyable by eye,
   /// and useless to a dealer writing it on a card or reading it down the phone.
   /// Given its own full-width block the whole URL wraps and stays legible,
   /// scheme included, which is what a buyer has to type.

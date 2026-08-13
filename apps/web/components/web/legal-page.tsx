@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { SITE_DOMAIN } from '@nph/contracts'
 
 /**
  * Shared shell for the static content pages (About, Contact, Terms, Privacy).
@@ -51,5 +52,5 @@ export const COMPANY = {
   address: '50 Olumegbon St, Surulere, Lagos',
   phone: '+234 903 672 6262',
   phoneHref: 'tel:+2349036726262',
-  domain: 'naijapartshub.com',
+  domain: SITE_DOMAIN,
 } as const
