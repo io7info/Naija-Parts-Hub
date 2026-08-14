@@ -114,3 +114,52 @@ export const MAX_SEARCH_TOKENS = 60;
  * scripts/check-rules-sync.mjs fails when the two drift.
  */
 export const FUNCTIONS_REGION = 'us-central1';
+
+// --- Canonical public origin ------------------------------------------------
+
+/**
+ * The one address this product lives at.
+ *
+ * Everything user-facing resolves against it: the Paystack return URL, the
+ * dealer billing page, public store and listing links, share text, SEO
+ * canonicals, and the admin sign-in origin allowlist.
+ *
+ * It is a constant rather than an environment variable because it is not
+ * configuration — it is the product's identity, and a deployment that serves a
+ * different domain is a different deployment. Where an override is genuinely
+ * needed (a preview build, an emulator pointed at localhost) the reader takes
+ * `MARKETPLACE_ORIGIN` from the environment and falls back to this, so the
+ * default is always the right answer rather than a guess.
+ *
+ * The `.ng` variant that appeared through the codebase was never registered.
+ * It reached the Paystack callback URL, where the consequence is a dealer
+ * finishing checkout on a domain that does not resolve — money taken, no
+ * confirmation, and no way for them to tell whether it worked.
+ *
+ * Flutter cannot import TypeScript and mirrors this in
+ * apps/mobile/lib/core/env.dart; scripts/check-rules-sync.mjs fails when the
+ * two drift, and rejects any `.ng` literal that creeps back in.
+ */
+export const SITE_ORIGIN = 'https://naijapartshub.com';
+
+/** Host without the scheme, for display: "naijapartshub.com/store/ladipo". */
+export const SITE_DOMAIN = 'naijapartshub.com';
+
+/**
+ * Where a dealer buys or renews a plan.
+ *
+ * `/dealer/subscription`, never `/plans`: the latter is the public price list,
+ * with no sign-in and no checkout, so a dealer sent there reaches a dead end.
+ */
+export const BILLING_PATH = '/dealer/subscription';
+
+/**
+ * Domain for the synthetic customer address Paystack requires.
+ *
+ * Dealers authenticate by phone and may have no email. Paystack needs a
+ * syntactically valid one to key its customer record, so a per-store address is
+ * generated under a subdomain that is deliberately not a real mailbox — routing
+ * these anywhere would create an inbox nobody reads, and reusing a real domain
+ * risks colliding with an address that exists.
+ */
+export const DEALER_EMAIL_DOMAIN = `dealers.${SITE_DOMAIN}`;

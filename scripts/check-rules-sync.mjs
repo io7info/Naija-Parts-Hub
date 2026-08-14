@@ -159,6 +159,70 @@ for (const file of SCANNED) {
   }
 }
 
+// --- Canonical domain -------------------------------------------------------
+//
+// The project accumulated three spellings of its own address — naijahubparts
+// in the SOW, naijapartshub.ng in the backend and the app, naijapartshub.com in
+// the web app — and only the .com was ever registered.
+//
+// That is not cosmetic. The .ng reached the Paystack return URL, so a dealer
+// completed a real payment and landed on a domain that does not resolve: money
+// taken, no confirmation, and nothing on screen to say whether it had worked.
+// So the Dart mirror is checked, and the dead spellings are banned outright.
+
+const ORIGIN_MIRRORS = [
+  {
+    label: 'apps/mobile/lib/core/env.dart',
+    file: 'apps/mobile/lib/core/env.dart',
+    // String.fromEnvironment('MARKETPLACE_ORIGIN', defaultValue: '<origin>')
+    pattern: /MARKETPLACE_ORIGIN'\s*,\s*defaultValue:\s*'([^']+)'/,
+  },
+];
+
+for (const mirror of ORIGIN_MIRRORS) {
+  const source = readFileSync(join(root, mirror.file), 'utf8');
+  const found = source.match(mirror.pattern)?.[1];
+
+  if (!found) {
+    failures++;
+    console.error(`✗ could not find the marketplace origin in ${mirror.label}`);
+  } else if (found !== contracts.SITE_ORIGIN) {
+    failures++;
+    console.error(
+      `✗ ${mirror.label} points at "${found}" but SITE_ORIGIN is "${contracts.SITE_ORIGIN}"`,
+    );
+  } else {
+    console.log(`✓ ${'site origin'.padEnd(22)} ${found} in sync with ${mirror.label}`);
+  }
+}
+
+// Comments are stripped first: several files legitimately discuss
+// "evil-naijapartshub.com" when explaining why the origin allowlist is an exact
+// match rather than a suffix test.
+const DEAD_DOMAINS = /naijapartshub\.ng|naijahubparts\.[a-z]+/;
+const DOMAIN_SCANNED = [
+  'functions/src/payments.ts',
+  'functions/src/publishListing.ts',
+  'functions/src/lib/site.ts',
+  'apps/web/app/layout.tsx',
+  'apps/web/lib/admin-session.ts',
+  'apps/mobile/lib/core/env.dart',
+  'packages/contracts/src/constants.ts',
+];
+
+for (const file of DOMAIN_SCANNED) {
+  const source = readFileSync(join(root, file), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+  const dead = source.match(DEAD_DOMAINS)?.[0];
+  if (dead) {
+    failures++;
+    console.error(`✗ ${file} references ${dead}, which is not a registered domain`);
+  } else {
+    console.log(`✓ ${'no dead domain'.padEnd(22)} ${file}`);
+  }
+}
+
 if (failures > 0) {
   console.error(`\n${failures} check(s) failed — rules and contracts have drifted.`);
   process.exit(1);

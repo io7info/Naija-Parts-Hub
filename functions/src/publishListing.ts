@@ -11,8 +11,16 @@ import {
 import { COL, FieldValue, Timestamp, db, listingRef, storeRef } from './lib/admin';
 import { fail, requireAuth, requireString } from './lib/guards';
 import { fromStore, limitFor } from './lib/subscription';
+import { BILLING_PATH, siteOrigin } from './lib/site';
 
-const UPGRADE_URL = process.env.UPGRADE_URL ?? 'https://naijapartshub.ng/upgrade';
+/**
+ * Returned to the client when a dealer hits their listing limit (SOW §5).
+ *
+ * Two things were wrong with the literal this replaces. The domain was the
+ * unregistered `.ng`, and the path was `/upgrade`, which has never existed —
+ * so a dealer following the limit prompt reached a 404 on a dead domain.
+ */
+const UPGRADE_URL = process.env.UPGRADE_URL ?? `${siteOrigin()}${BILLING_PATH}`;
 
 /**
  * Entitlement ceiling for a store's current plan.

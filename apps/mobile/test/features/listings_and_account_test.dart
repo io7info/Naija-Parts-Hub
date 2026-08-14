@@ -313,7 +313,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // What is copied must carry the scheme even where the display might not:
-      // a pasted 'naijapartshub.ng/...' is not a link in most apps.
+      // a pasted 'naijapartshub.com/...' is not a link in most apps.
       expect(copied, ['${Env.marketplaceOrigin}/store/ladipo-auto-spares']);
       expect(find.text('Store link copied.'), findsOneWidget);
     });

@@ -3,7 +3,7 @@ import 'server-only'
 import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
-import { ADMIN_CLAIM, ADMIN_CLAIM_VALUE } from '@nph/contracts'
+import { ADMIN_CLAIM, ADMIN_CLAIM_VALUE, SITE_ORIGIN } from '@nph/contracts'
 
 import { getAdminAuth, adminUsesEmulator } from './firebase-admin'
 
@@ -217,7 +217,7 @@ export async function createAdminSession(
 export function allowedOrigins(): string[] {
   const configured = process.env.ADMIN_ALLOWED_ORIGINS?.split(',').map((s) => s.trim())
   if (configured?.length) return configured.filter(Boolean)
-  if (process.env.NODE_ENV === 'production') return ['https://naijapartshub.com']
+  if (process.env.NODE_ENV === 'production') return [SITE_ORIGIN]
   return ['http://localhost:3000', 'http://127.0.0.1:3000']
 }
 

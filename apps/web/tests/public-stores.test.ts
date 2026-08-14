@@ -301,3 +301,41 @@ describe('the documented environment matches the consumed environment', () => {
     expect(CONFIG).not.toMatch(/NEXT_PUBLIC_USE_FIREBASE_EMULATORS\s*!==\s*'false'/)
   })
 })
+
+describe('one canonical domain', () => {
+  // Three spellings existed and only the .com was registered. The .ng reached
+  // the Paystack return URL, so a dealer completed a real payment and landed on
+  // a domain that does not resolve. These pin the survivor.
+  const LAYOUT = readFileSync(join(WEB_ROOT, 'app/layout.tsx'), 'utf8')
+  const LEGAL = readFileSync(join(WEB_ROOT, 'components/web/legal-page.tsx'), 'utf8')
+  const SESSION = readFileSync(join(WEB_ROOT, 'lib/admin-session.ts'), 'utf8')
+
+  it('the contract names the registered domain', async () => {
+    const { SITE_ORIGIN, SITE_DOMAIN } = await import('@nph/contracts')
+    expect(SITE_ORIGIN).toBe('https://naijapartshub.com')
+    expect(SITE_DOMAIN).toBe('naijapartshub.com')
+  })
+
+  it('billing points at the dealer page, never the public price list', async () => {
+    const { BILLING_PATH } = await import('@nph/contracts')
+    expect(BILLING_PATH).toBe('/dealer/subscription')
+  })
+
+  for (const [name, source] of [
+    ['SEO canonicals', LAYOUT],
+    ['legal pages', LEGAL],
+    ['the admin origin allowlist', SESSION],
+  ] as const) {
+    it(`${name} resolve against the shared constant`, () => {
+      expect(source).toMatch(/SITE_(ORIGIN|DOMAIN)/)
+    })
+  }
+
+  it('no unregistered domain survives in the web source', () => {
+    const files = [LAYOUT, LEGAL, SESSION]
+    for (const source of files) {
+      const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
+      expect(code).not.toMatch(/naijapartshub\.ng|naijahubparts/)
+    }
+  })
+})
