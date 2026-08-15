@@ -11,17 +11,31 @@
       "source": "functions",
       "codebase": "default",
       "runtime": "nodejs22",
+      "//": [
+        "Only dist/ ships. It is the esbuild bundle, with @nph/contracts",
+        "inlined — see functions/scripts/bundle.mjs for why that is not a",
+        "dependency. lib/ is the tsc output and exists purely for the tests,",
+        "which import compiled files directly; uploading it would ship a",
+        "second copy of every function that still requires the workspace",
+        "package Cloud Build cannot resolve.",
+        "",
+        "scripts/ holds seeding and admin tooling that runs against a project",
+        "with elevated credentials. It has no business in a deployed artifact."
+      ],
       "ignore": [
         "node_modules",
         ".git",
         "*.log",
         "src/**",
+        "lib/**",
+        "test/**",
+        "scripts/**",
         "**/*.test.ts",
         "tsconfig*.json"
       ],
       "predeploy": [
         "npm --prefix \"$PROJECT_DIR\" run contracts:build",
-        "npm --prefix \"$RESOURCE_DIR\" run build"
+        "npm --prefix \"$RESOURCE_DIR\" run build:deploy"
       ]
     }
   ],
