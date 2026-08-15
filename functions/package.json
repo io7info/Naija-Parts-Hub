@@ -4,16 +4,17 @@
   "private": true,
   "description": "Cloud Functions for Naija Parts Hub. Owns every tamper-sensitive state transition.",
   "license": "UNLICENSED",
-  "main": "lib/index.js",
+  "main": "dist/index.js",
   "engines": {
     "node": "22"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:deploy": "npm run typecheck && node scripts/bundle.mjs",
     "watch": "tsc -p tsconfig.json --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test --test-force-exit",
-    "serve": "npm run build && firebase emulators:start --only functions,firestore,auth,storage",
+    "serve": "npm run build:deploy && firebase emulators:start --only functions,firestore,auth,storage",
     "seed": "node scripts/seed-emulator.mjs",
     "seed:admin": "node scripts/seed-emulator.mjs",
     "admin": "node scripts/admin-review.mjs",
@@ -22,12 +23,12 @@
     "bootstrap:prod-admin": "node scripts/bootstrap-production-admin.mjs"
   },
   "dependencies": {
-    "@nph/contracts": "*",
     "firebase-admin": "^13.0.2",
     "firebase-functions": "^6.3.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "esbuild": "^0.28.2",
     "typescript": "^5.7.2"
   }
 }

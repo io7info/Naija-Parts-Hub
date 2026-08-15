@@ -12,7 +12,7 @@ iOS builds usually fail, and it cannot be run or verified from this machine.
 | | |
 |---|---|
 | `ios/` project generated | `flutter create --platforms=android,ios` |
-| Bundle ID | `com.lytodmotors.naijaPartsHub` |
+| Bundle ID | `com.lytodmotors.naijapartshub` — all lowercase, and identical to the Android `applicationId`. Register the App ID from this line, never from memory: it cannot be changed after the first submission. |
 | Display name | Naija Parts Hub |
 | `NSCameraUsageDescription` | present — missing is a hard crash, not a prompt |
 | `NSPhotoLibraryUsageDescription` | present |
@@ -21,6 +21,24 @@ iOS builds usually fail, and it cannot be run or verified from this machine.
 | Emulator host resolution | `Env.emulatorHost` returns `localhost` on iOS, `10.0.2.2` only on Android |
 
 ## Still required
+
+> **A fresh clone cannot build — for either platform — until `flutterfire
+> configure` has run.** `firebase_options.dart`, `GoogleService-Info.plist` and
+> `google-services.json` are all gitignored on purpose (see the FIREBASE block
+> in `.gitignore`): they name the client's project, and they are generated, not
+> authored. Their absence is expected and is **not** evidence that the tree is
+> broken or that earlier Android testing happened somewhere else.
+>
+> ```bash
+> flutterfire configure --project=naijapartshub \
+>   --platforms=android,ios \
+>   --ios-bundle-id=com.lytodmotors.naijapartshub \
+>   --android-package-name=com.lytodmotors.naijapartshub
+> ```
+>
+> Pass those flags rather than answering the prompts. Both apps are already
+> registered in Firebase; the flags make the CLI reuse them instead of silently
+> creating a second, differently-named app.
 
 1. **A Mac or macOS CI runner.** No alternative exists.
 2. **Apple Developer enrolment.** Needed for the APNs key. As an organisation

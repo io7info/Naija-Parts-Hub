@@ -14,7 +14,19 @@
     "noUnusedParameters": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+
+    // `@nph/contracts` is deliberately absent from package.json — see the
+    // header of scripts/bundle.mjs. Naming it here keeps type resolution
+    // explicit rather than leaning on npm workspace hoisting, which would
+    // resolve today and break silently if the workspace layout changed.
+    //
+    // Mapped to the built .d.ts rather than to src/, because a source file
+    // outside rootDir would be pulled into the emit and trip TS6059.
+    "baseUrl": ".",
+    "paths": {
+      "@nph/contracts": ["../packages/contracts/dist/index.d.ts"]
+    }
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "lib"]
