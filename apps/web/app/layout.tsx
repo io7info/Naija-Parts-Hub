@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from 'next'
 import { SITE_ORIGIN } from '@nph/contracts'
 import localFont from 'next/font/local'
+import { analyticsEnabled } from '@/lib/analytics'
+import { GoogleAnalytics } from '@/components/web/google-analytics'
 import './globals.css'
 
 /**
@@ -85,7 +87,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${inter.variable} ${manrope.variable}`}>
-      <body className="antialiased bg-background text-foreground">{children}</body>
+      <body className="antialiased bg-background text-foreground">
+        {children}
+        {/* Evaluated on the server, so the tag is absent from the HTML
+            entirely outside production rather than loaded and then disabled. */}
+        {analyticsEnabled() && <GoogleAnalytics />}
+      </body>
     </html>
   )
 }

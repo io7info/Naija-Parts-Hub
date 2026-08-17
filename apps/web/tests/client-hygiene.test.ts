@@ -104,26 +104,50 @@ describe('no server credentials reachable from the browser', () => {
   })
 })
 
-describe('Firebase Analytics is not initialised', () => {
+describe('analytics is GA4 via gtag, and nothing else', () => {
+  // The two files allowed to know the measurement id. Anything else naming it
+  // means a second, competing integration is being added.
+  const GA_FILES = ['lib/analytics.ts', 'components/web/google-analytics.tsx']
+
+  const posix = (path: string) => relative(WEB_ROOT, path).replace(/\\/g, '/')
+
   it('nothing imports or calls getAnalytics', () => {
     const offenders = sourceFiles(WEB_ROOT)
       .filter((path) => {
         const source = code(path)
         return /getAnalytics|firebase\/analytics/.test(source)
       })
-      .map((path) => relative(WEB_ROOT, path))
+      .map(posix)
 
-    // Deferred for Phase 1. getAnalytics() also throws during SSR, so adding it
-    // casually breaks every server-rendered page.
+    // Still banned even though GA4 is now wired up: the site measures through
+    // gtag.js, loaded by <Script> in the client component below. Firebase
+    // Analytics is a different SDK that would double-count every page, and
+    // getAnalytics() throws during SSR, so adding it casually breaks every
+    // server-rendered page.
     expect(offenders).toEqual([])
   })
 
-  it('no measurement id is plumbed through the environment', () => {
+  it('the measurement id appears only in the two analytics files', () => {
+    // This used to forbid MEASUREMENT_ID outright, because analytics was
+    // deferred for Phase 1. The client supplied a GA4 property, so the ban is
+    // now an allowlist: the id is defined once and consumed once. A third file
+    // naming it is the signal that someone is hand-rolling a second tag.
     const offenders = sourceFiles(WEB_ROOT)
       .filter((path) => code(path).includes('MEASUREMENT_ID'))
-      .map((path) => relative(WEB_ROOT, path))
+      .map(posix)
+      .filter((path) => !GA_FILES.includes(path))
 
     expect(offenders).toEqual([])
+  })
+
+  it('the measurement id is a GA4 id, not a Firebase or Ads one', () => {
+    const source = code(join(WEB_ROOT, 'lib/analytics.ts'))
+    const id = source.match(/GA_MEASUREMENT_ID = '([^']+)'/)?.[1]
+
+    // G- is GA4. AW- is Google Ads conversion tracking and ca-pub- is AdSense;
+    // pasting either here loads the tag but records nothing, and the reports
+    // stay empty for weeks before anyone works out why.
+    expect(id).toMatch(/^G-[A-Z0-9]+$/)
   })
 })
 
