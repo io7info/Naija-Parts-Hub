@@ -42,6 +42,20 @@ export default function PrivacyPage() {
         </p>
       </LegalSection>
 
+      <LegalSection heading="Analytics and cookies">
+        <p>
+          The website uses Google Analytics 4 to understand how the marketplace is used — which
+          pages are visited, from which broad region, and on what kind of device. This is
+          aggregate measurement of the website only; the dealer mobile app contains no analytics.
+        </p>
+        <p>
+          Google Analytics sets cookies in your browser and processes the data on our behalf. We
+          do not send it your name, phone number or any other identifying detail, and we do not
+          use it for advertising. You can block it with your browser&apos;s cookie settings or
+          Google&apos;s official opt-out browser add-on.
+        </p>
+      </LegalSection>
+
       <LegalSection heading="Payments">
         <p>
           Subscription payments are processed by Paystack. Card details are entered on Paystack&apos;s
