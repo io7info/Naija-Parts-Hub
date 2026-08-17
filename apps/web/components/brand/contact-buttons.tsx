@@ -3,8 +3,24 @@
 import { Check, Phone, Share2 } from 'lucide-react'
 import { useState } from 'react'
 
+import { track } from '@/lib/analytics'
 import { toE164Digits } from '@/lib/marketplace'
 import { cn } from '@/lib/utils'
+
+/**
+ * Which dealer was contacted, and from where.
+ *
+ * Never the number. The store slug is already public and already in the URL
+ * GA4 records for the page, so it identifies the dealer for reporting without
+ * adding anything Google does not already hold. `surface` separates a contact
+ * from a listing page from one on the store page, which is the difference
+ * between "this part sells" and "this dealer is trusted".
+ */
+export type ContactContext = {
+  storeSlug?: string
+  listingSlug?: string
+  surface: 'listing' | 'store'
+}
 
 /**
  * Buyer contact actions.
@@ -56,12 +72,14 @@ export function WhatsAppButton({
   label = 'Chat on WhatsApp',
   className,
   size = 'md',
+  context,
 }: {
   phone?: string
   message?: string
   label?: string
   className?: string
   size?: Size
+  context?: ContactContext
 }) {
   const digits = toE164Digits(phone ?? '')
   const glyph = <WhatsAppGlyph className={size === 'icon' ? 'size-5' : 'size-4'} />
@@ -80,6 +98,16 @@ export function WhatsAppButton({
       // noreferrer as well as noopener: wa.me is a third party and has no need
       // for the referring listing URL.
       rel="noopener noreferrer"
+      // Reported before navigation, but this opens a new tab so the page is
+      // never torn down and the beacon always completes. No preventDefault:
+      // analytics must not sit between a buyer and the dealer.
+      onClick={() =>
+        track('click_whatsapp_dealer', {
+          store_slug: context?.storeSlug,
+          listing_slug: context?.listingSlug,
+          surface: context?.surface,
+        })
+      }
       aria-label={size === 'icon' ? 'Chat on WhatsApp' : undefined}
       className={cn(
         WHATSAPP_BASE,
@@ -98,11 +126,13 @@ export function CallButton({
   label = 'Call Seller',
   className,
   size = 'md',
+  context,
 }: {
   phone?: string
   label?: string
   className?: string
   size?: Size
+  context?: ContactContext
 }) {
   const digits = toE164Digits(phone ?? '')
   const icon = <Phone className="size-4" />
@@ -114,6 +144,15 @@ export function CallButton({
   return (
     <a
       href={`tel:+${digits}`}
+      // tel: hands off to the dialler rather than unloading the document, so
+      // the event completes here too.
+      onClick={() =>
+        track('click_call_dealer', {
+          store_slug: context?.storeSlug,
+          listing_slug: context?.listingSlug,
+          surface: context?.surface,
+        })
+      }
       aria-label={size === 'icon' ? 'Call seller' : undefined}
       className={cn(OUTLINE_BASE, size === 'icon' ? 'size-9 p-0' : sizing(size), className)}
     >

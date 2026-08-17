@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { onAuthStateChanged, type User } from 'firebase/auth'
 import { collection, onSnapshot, orderBy, query, where, doc } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { AlertTriangle, CheckCircle2, Clock, CreditCard, Loader2, LogOut } from 'lucide-react'
+import { gaAttribution, track } from '@/lib/analytics'
 import { auth, db, functions } from '@/lib/firebase-client'
 import { formatNaira } from '@/lib/marketplace'
 import {
@@ -71,17 +72,55 @@ export function SubscriptionClient() {
 
   const view = useMemo(() => subscriptionView(store), [store])
 
+  // Reported once the store has loaded, not on mount: `view` is 'free' while
+  // the Firestore snapshot is still in flight, so reporting immediately would
+  // record every paying dealer as being on the free plan.
+  const viewReported = useRef(false)
+  useEffect(() => {
+    if (viewReported.current || !store) return
+    viewReported.current = true
+    track('dealer_subscription_view', {
+      plan_state: view.state,
+      plan: 'plan' in view ? view.plan : 'free',
+    })
+  }, [store, view])
+
   async function subscribe(plan: PaidPlan) {
     setBusyPlan(plan)
     setError(null)
     try {
+      // Read before the callable, because these identifiers exist only in this
+      // browser and only right now.
+      //
+      // This adds a bounded delay of at most 400ms before checkout — usually
+      // none, since it returns immediately both when analytics is blocked and
+      // when gtag.js has already loaded. It cannot hang or fail the payment:
+      // gaAttribution always resolves and never rejects.
+      const analytics = await gaAttribution()
+
       const result = await httpsCallable<
-        { plan: PaidPlan; callbackUrl: string },
+        {
+          plan: PaidPlan
+          callbackUrl: string
+          analytics?: { clientId?: string; sessionId?: string }
+        },
         { authorizationUrl: string }
       >(
         functions,
         'initializePayment',
-      )({ plan, callbackUrl: '/dealer/subscription/callback' })
+      )({ plan, callbackUrl: '/dealer/subscription/callback', analytics })
+
+      // After initialize succeeds, before the redirect. Firing on click would
+      // count dealers whose checkout never opened — a failed callable, an
+      // expired session — and make the drop-off between started and completed
+      // look like abandonment rather than the error it was.
+      track('payment_started', {
+        plan,
+        price_naira: planPriceNaira(plan),
+        // Distinguishes a first purchase from a renewal or an upgrade, which
+        // is the difference between acquisition and retention in the reports.
+        from_state: view.state,
+      })
 
       // Paystack's own hosted page. Card details are entered there and never
       // touch this origin — which is why there is no card form in this repo.

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { LayoutGrid, List, SlidersHorizontal, X } from 'lucide-react'
 import { ProductCard } from '@/components/brand/product-card'
 import { EmptyState } from '@/components/brand/ui-bits'
+import { sanitizeSearchTerm, track } from '@/lib/analytics'
 import { cn } from '@/lib/utils'
 import { type Condition, type Product } from '@/lib/marketplace'
 
@@ -220,6 +221,17 @@ export function BrowseClient({
       <form
         onSubmit={(e) => {
           e.preventDefault()
+          // Only an explicit submit counts as a search. Changing a category or
+          // condition filter also re-queries, but reporting those as searches
+          // would bury the terms buyers actually type — which is the reason
+          // this event exists.
+          const search = sanitizeSearchTerm(query)
+          track('search', {
+            search_term: search.term,
+            search_words_dropped: search.dropped,
+            category_filter: initialCategory || undefined,
+            surface: 'browse',
+          })
           setParam('q', query.trim() || undefined)
         }}
         className="flex gap-2 rounded-2xl border border-border bg-card p-2"

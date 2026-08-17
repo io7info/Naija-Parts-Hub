@@ -1,6 +1,16 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  // Mirrors the '@/*' path in tsconfig.json. Vitest does not read tsconfig
+  // paths, so without this any suite importing application code fails to
+  // resolve the moment that code imports a sibling by alias — which is how
+  // every module here refers to its neighbours.
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('.', import.meta.url)).replace(/\/$/, ''),
+    },
+  },
   test: {
     // Node, not jsdom: these suites exercise configuration, the token exchange
     // and bundle hygiene. Nothing here renders a component, so a DOM would be

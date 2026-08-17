@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation'
 import { onAuthStateChanged } from 'firebase/auth'
 import { httpsCallable } from 'firebase/functions'
 import { AlertTriangle, CheckCircle2, Clock, Loader2, XCircle } from 'lucide-react'
+import { track } from '@/lib/analytics'
 import { auth, functions } from '@/lib/firebase-client'
 
 /**
@@ -33,6 +34,36 @@ type Result =
   | { state: 'failed'; message: string }
   | { state: 'needs-support'; message: string }
   | { state: 'no-reference' }
+
+/**
+ * Reports a completed payment at most once per Paystack reference.
+ *
+ * This page is reachable by URL and survives a refresh, and `verifyPayment`
+ * deliberately reports an already-applied payment as success — a dealer who
+ * reloads must see "you are subscribed", not an error. Without a guard, every
+ * reload would report another sale and the client's revenue numbers would
+ * count reloads as purchases.
+ *
+ * sessionStorage rather than a ref: a ref is lost on reload, which is the
+ * exact case this defends against. Per-tab and cleared when it closes, which
+ * is the right lifetime — a genuine second purchase happens in a new checkout
+ * with a new reference, so it is never suppressed.
+ *
+ * The reference is used as the key only. It is not sent to GA4: it identifies
+ * a specific dealer's transaction and would let anyone with report access
+ * correlate analytics rows with Paystack records.
+ */
+function reportCompletedOnce(reference: string) {
+  const key = `nph:payment_completed:${reference}`
+  try {
+    if (sessionStorage.getItem(key)) return
+    sessionStorage.setItem(key, '1')
+  } catch {
+    // Private browsing and locked-down profiles throw on storage access.
+    // Reporting twice is better than the page failing, so continue.
+  }
+  track('payment_completed')
+}
 
 export function CallbackClient() {
   const params = useSearchParams()
@@ -71,6 +102,7 @@ export function CallbackClient() {
         )({ reference })
 
         if (res.data.status === 'success') {
+          reportCompletedOnce(reference)
           setResult({ state: 'success', expiresAt: res.data.expiresAt })
         } else if (res.data.status === 'pending') {
           setResult({ state: 'pending' })

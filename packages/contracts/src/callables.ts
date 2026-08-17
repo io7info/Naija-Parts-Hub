@@ -108,6 +108,23 @@ export interface InitializePaymentRequest {
   plan: Exclude<SubscriptionPlan, 'free'>;
   /** Where Paystack returns the dealer after checkout. Must be an allowlisted origin. */
   callbackUrl: string;
+
+  /**
+   * GA4 identifiers read from the dealer's browser at checkout.
+   *
+   * Captured here because this is the only moment they exist: a purchase
+   * reported later from the server without them does not become an
+   * unattributed conversion, it fabricates a new user and a new session in
+   * GA4. See docs/ANALYTICS.md.
+   *
+   * Optional and untrusted — absent whenever analytics is blocked, which is
+   * normal. Validated and stored for reporting only; never used in any
+   * security or billing decision.
+   */
+  analytics?: {
+    clientId?: string;
+    sessionId?: string;
+  };
 }
 
 export interface InitializePaymentResponse {

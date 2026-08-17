@@ -152,14 +152,33 @@ describe('analytics is GA4 via gtag, and nothing else', () => {
 })
 
 describe('no client-side authorisation remains', () => {
+  // The one sanctioned use of web storage. The Paystack callback page is
+  // reachable by URL and survives a reload, and verifyPayment reports an
+  // already-applied payment as success by design — so without a marker every
+  // reload would report another sale to GA4. It stores '1' against a payment
+  // reference and grants nothing.
+  const STORAGE_ALLOWED = ['app/(site)/dealer/subscription/callback/callback-client.tsx']
+
   it('no admin state is kept in sessionStorage or localStorage', () => {
     const offenders = sourceFiles(WEB_ROOT)
       .filter((path) => /sessionStorage|localStorage/.test(code(path)))
-      .map((path) => relative(WEB_ROOT, path))
+      .map((path) => relative(WEB_ROOT, path).replace(/\\/g, '/'))
+      .filter((path) => !STORAGE_ALLOWED.includes(path))
 
     // Anything a client can write, a client can forge. Authorisation is the
     // httpOnly session cookie verified in lib/admin-session.ts, nothing else.
     expect(offenders).toEqual([])
+  })
+
+  it('the sanctioned storage use holds nothing that grants access', () => {
+    // The allowlist above is a hole in the rule, so it is itself checked:
+    // a credential must never be smuggled through the one permitted door.
+    for (const rel of STORAGE_ALLOWED) {
+      const source = code(join(WEB_ROOT, rel))
+      expect(source).not.toMatch(
+        /(sessionStorage|localStorage)[^\n]*\b(token|claim|role|admin|uid|session|auth|password)\b/i,
+      )
+    }
   })
 
   it('the login form has no direct link into the dashboard', () => {

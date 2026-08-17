@@ -6,6 +6,7 @@ import { VerifiedBadge, ConditionBadge } from '@/components/brand/badges'
 import { WhatsAppButton, CallButton, ShareButton } from '@/components/brand/contact-buttons'
 import { StoreInitials } from '@/components/brand/store-card'
 import { ProductCard } from '@/components/brand/product-card'
+import { TrackView } from '@/components/web/track-view'
 import { formatNaira } from '@/lib/marketplace'
 import {
   getPublicListing,
@@ -41,6 +42,20 @@ export default async function WebProductPage({ params }: { params: Promise<{ slu
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+      {/* Price in naira, not kobo: reports are read by the client, and a
+          listing showing 2,500,000 where the site says ₦25,000 invites the
+          wrong conclusion about what parts sell for. */}
+      <TrackView
+        event="view_listing"
+        params={{
+          listing_slug: slug,
+          category: product.category,
+          condition: product.condition,
+          store_slug: product.storeSlug,
+          price_naira: product.price,
+        }}
+      />
+
       {/* Breadcrumb */}
       <nav className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
         <Link href="/" className="hover:text-orange">
@@ -84,8 +99,13 @@ export default async function WebProductPage({ params }: { params: Promise<{ slu
               phone={product.storeWhatsapp || product.storePhone}
               message={`Hello, is "${product.name}" still available on Naija Parts Hub?`}
               className="flex-1"
+              context={{ surface: 'listing', storeSlug: product.storeSlug, listingSlug: slug }}
             />
-            <CallButton phone={product.storePhone} className="flex-1" />
+            <CallButton
+              phone={product.storePhone}
+              className="flex-1"
+              context={{ surface: 'listing', storeSlug: product.storeSlug, listingSlug: slug }}
+            />
           </div>
           <div className="mt-3 flex gap-3">
             <Link
