@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { Search, MapPin } from 'lucide-react'
 
+import { sanitizeSearchTerm, track } from '@/lib/analytics'
+
 const nigerianStates = [
   'All Nigeria',
   'Lagos',
@@ -25,6 +27,18 @@ export function HeroSearch() {
     const params = new URLSearchParams()
     if (query.trim()) params.set('q', query.trim())
     if (state !== 'All Nigeria') params.set('state', state)
+
+    // Reported on submit, never on mount. This navigates to /parts, whose own
+    // search box also reports — counting the arrival there as well would
+    // record two searches for one intent.
+    const search = sanitizeSearchTerm(query)
+    track('search', {
+      search_term: search.term,
+      search_words_dropped: search.dropped,
+      state_filter: state === 'All Nigeria' ? undefined : state,
+      surface: 'home_hero',
+    })
+
     router.push(`/parts${params.toString() ? `?${params.toString()}` : ''}`)
   }
 

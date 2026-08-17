@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { onCall } from 'firebase-functions/v2/https';
 import { onRequest } from 'firebase-functions/v2/https';
 import {
@@ -15,6 +15,7 @@ import {
 import { COL, Timestamp, db, storeRef } from './lib/admin';
 import { fail, requireAuth, requireOneOf } from './lib/guards';
 import { applyVerifiedPayment } from './lib/applyPayment';
+import { gaAttribution } from './lib/gaAttribution';
 import { fromStore, isEntitled } from './lib/subscription';
 import { billingUrl, siteOrigin } from './lib/site';
 import {
@@ -152,6 +153,17 @@ export const initializePayment = onCall<
     verifiedVia: null,
     subscriptionAppliedAt: null,
     raw: null,
+    analytics: {
+      ...gaAttribution(request.data?.analytics),
+      // Generated here, once, and never again for this reference. GA4
+      // deduplicates `purchase` on it, so it has to survive webhook retries
+      // and the callback racing them — which it does, because every later
+      // path reads this document rather than making its own.
+      //
+      // Server-generated so a client cannot choose it, and deliberately not
+      // derived from the Paystack reference: see PaymentAnalytics.
+      transactionId: randomUUID(),
+    },
   });
 
   try {

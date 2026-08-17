@@ -7,6 +7,7 @@ import { WhatsAppButton, CallButton, ShareButton } from '@/components/brand/cont
 import { StoreInitials } from '@/components/brand/store-card'
 import { formatNigerianPhone } from '@/lib/marketplace'
 import { getPublicStore } from '@/lib/repositories/marketplace'
+import { TrackView } from '@/components/web/track-view'
 import { StoreProducts } from './store-products'
 
 /**
@@ -32,6 +33,15 @@ export default async function WebStorePage({ params }: { params: Promise<{ slug:
 
   return (
     <div>
+      <TrackView
+        event="view_dealer_store"
+        params={{
+          store_slug: slug,
+          verified: store.verified,
+          listing_count: items.length,
+        }}
+      />
+
       {/* Banner */}
       <div className="relative h-40 bg-dark sm:h-52">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,106,0,0.25),transparent_55%)]" />
@@ -53,12 +63,18 @@ export default async function WebStorePage({ params }: { params: Promise<{ slug:
             </div>
           </div>
           <div className="flex gap-2 pb-1">
-            <CallButton phone={store.phone} label="Call Store" size="sm" />
+            <CallButton
+              phone={store.phone}
+              label="Call Store"
+              size="sm"
+              context={{ surface: 'store', storeSlug: slug }}
+            />
             <WhatsAppButton
               phone={store.whatsapp || store.phone}
               message={`Hello ${store.name}, I found your store on Naija Parts Hub.`}
               label="WhatsApp Store"
               size="sm"
+              context={{ surface: 'store', storeSlug: slug }}
             />
             <ShareButton title={store.name} text={store.tagline} />
           </div>

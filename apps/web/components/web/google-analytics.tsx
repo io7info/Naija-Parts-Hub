@@ -1,60 +1,51 @@
-'use client'
-
 import Script from 'next/script'
-import { usePathname } from 'next/navigation'
-import { useEffect, useRef } from 'react'
 import { GA_MEASUREMENT_ID } from '@/lib/analytics'
 
 /**
- * GA4 tag, with extra page views sent on client-side navigation.
+ * The GA4 tag. Page views are Google's responsibility, not ours.
  *
- * The App Router never reloads the document after the first request, so the
- * page_view that gtag.js fires on load is the only one GA4 would otherwise
- * see: a buyer going home -> category -> product -> store registers as a
- * single view of the homepage, and every session looks like a bounce.
+ * WHY THERE IS NO MANUAL page_view HERE
  *
- * The split of responsibility matters. gtag's own `config` call sends the
- * FIRST page view, unmodified — that path is Google's code and cannot be
- * broken by anything here. This component only adds the views that client-side
- * navigation would otherwise lose, and the effect skips its initial run so the
- * landing page is not counted twice.
+ * GA4 can report a page view from two independent places, and they cannot see
+ * each other:
  *
- * An earlier revision disabled the automatic view (`send_page_view: false`)
- * and sent every view by hand. That put the entire reporting path behind
- * hand-written code: if the push were malformed, GA4 received nothing at all
- * and the property looked dead rather than merely undercounting. Letting
- * Google send the first one means the worst case here is missing SPA
- * navigations, not missing everything.
+ *   1. gtag.js, on load, from the `config` call below.
+ *   2. Enhanced Measurement's "page changes based on browser history events",
+ *      a switch in the GA4 admin UI. When on, gtag.js listens for History API
+ *      navigations — exactly what the App Router performs on every link — and
+ *      reports each one itself.
  *
- * Keyed on pathname only, not the query string. Marketplace filters live in
- * the query (`?category=brake&condition=new`), and adjusting a filter is not a
- * new page — counting it would inflate views and bury the pages that matter.
- * It also avoids `useSearchParams`, which opts the subtree out of static
- * rendering unless wrapped in Suspense.
+ * Sending our own page_view on route change duplicates (2) whenever that
+ * switch is on. Duplicated views inflate sessions, halve the bounce rate and
+ * corrupt every per-page average, and because the switch lives in the GA4
+ * dashboard rather than in this repository, code review cannot catch it: the
+ * data silently doubles the day somebody toggles it.
+ *
+ * The two safe configurations are "manual only, switch off" and "automatic
+ * only, switch on". Only the second is safe *regardless* of the switch:
+ *
+ *   switch ON  + no manual code -> correct
+ *   switch OFF + no manual code -> initial load only, undercounts SPA routes
+ *   switch ON  + manual code    -> every view double counted
+ *   switch OFF + manual code    -> correct
+ *
+ * We do not control the client's GA4 dashboard, so we choose the column that
+ * cannot double count. The worst case becomes missing SPA navigations, which
+ * is visible in the reports as implausibly low page counts and is fixed by one
+ * dashboard toggle. The alternative fails silently and inflates the numbers
+ * the client will report to their own stakeholders.
+ *
+ * tests/analytics.test.ts asserts no application code sends page_view, so this
+ * property is enforced rather than merely documented.
+ *
+ * REQUIRED SETTING: GA4 Admin -> Data streams -> NPH Web -> Enhanced
+ * measurement -> Page views -> "Page changes based on browser history events"
+ * must stay ON. Everything else on that panel is optional.
+ *
+ * Not a client component: it renders two <Script> tags and holds no state, so
+ * it stays server-rendered and ships no component JavaScript of its own.
  */
 export function GoogleAnalytics() {
-  const pathname = usePathname()
-  const skippedInitial = useRef(false)
-
-  useEffect(() => {
-    if (!skippedInitial.current) {
-      // gtag('config') already reported this one.
-      skippedInitial.current = true
-      return
-    }
-
-    // `gtag` is declared by the inline script below, which has certainly run
-    // by the time a navigation happens. Optional-called anyway: if analytics
-    // is blocked by an extension the global is simply absent, and a missing
-    // page view must never take the page down with a TypeError.
-    const w = window as unknown as { gtag?: (...args: unknown[]) => void }
-    w.gtag?.('event', 'page_view', {
-      page_path: pathname,
-      page_location: window.location.href,
-      page_title: document.title,
-    })
-  }, [pathname])
-
   return (
     <>
       <Script

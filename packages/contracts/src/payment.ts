@@ -48,6 +48,43 @@ export interface Payment {
 
   /** Trimmed Paystack payload kept for reconciliation. Never surfaced publicly. */
   raw: Record<string, unknown> | null;
+
+  /** GA4 attribution, captured at checkout. See PaymentAnalytics. */
+  analytics: PaymentAnalytics;
+}
+
+/**
+ * What a later server-side GA4 `purchase` needs in order to attribute.
+ *
+ * None of it is personal data. `clientId` and `sessionId` are GA4's own
+ * pseudonymous browser identifiers — the same values already in the visitor's
+ * `_ga` cookie — and they identify a browser, not a person. They carry no
+ * authority: nothing reads them to decide access, entitlement or amount.
+ *
+ * Null when analytics was blocked, which is the normal state for roughly a
+ * quarter of visitors. A purchase with a null clientId must simply not be
+ * reported, rather than reported with a synthetic one.
+ */
+export interface PaymentAnalytics {
+  /**
+   * GA4 client id — opaque per Google's contract, and in practice two dotted
+   * integers ('1234567890.1234567890') from stock gtag.js. Length- and
+   * charset-bounded server-side rather than matched against that one shape,
+   * so a custom or future format is stored rather than silently dropped.
+   */
+  clientId: string | null;
+  /** GA4 session id. Without it GA4 opens a new session for the purchase. */
+  sessionId: string | null;
+
+  /**
+   * The id GA4 deduplicates `purchase` on.
+   *
+   * Generated server-side, once, and deliberately NOT the Paystack reference:
+   * anyone with GA4 report access could otherwise correlate analytics rows
+   * with live payment-provider records. The mapping between the two stays in
+   * Firestore, where access is already controlled.
+   */
+  transactionId: string;
 }
 
 /**
