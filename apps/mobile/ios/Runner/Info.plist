@@ -74,11 +74,22 @@
 	     ':' replaced by '-', prefixed "app-". That is what the entry below is,
 	     matching Env.demoAppId for iOS.
 
-	     After `flutterfire configure` the real options carry a clientID, and
-	     init prefers the REVERSED_CLIENT_ID scheme *if it is registered here*,
-	     falling back to this one otherwise. Add it as a second string in the
-	     same array rather than replacing this one, so emulator and live builds
-	     both work from one Info.plist. -->
+	     The live project takes the SAME fallback form, not a REVERSED_CLIENT_ID.
+	     That is worth stating plainly because every Firebase guide says to use
+	     REVERSED_CLIENT_ID: that key only exists once an OAuth client has been
+	     created for the iOS app, which happens when Google Sign-In is enabled.
+	     This project authenticates by phone only, so the generated
+	     GoogleService-Info.plist for 1:813389632700:ios:7beb45e69e7929de146cb9
+	     carries no CLIENT_ID and no REVERSED_CLIENT_ID — verified against the
+	     live project. `options.clientID` is therefore nil in production too and
+	     init takes the app-id branch again.
+
+	     Both schemes are registered below. Which one is used is decided at
+	     runtime by whichever app id FirebaseOptions carries: the demo id under
+	     Env.useEmulator, the live id from the generated firebase_options.dart
+	     otherwise. Neither build reads GoogleService-Info.plist — the Dart side
+	     passes options explicitly and the file is not referenced by the Xcode
+	     project at all. -->
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -88,10 +99,16 @@
 			<string>firebase-auth</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<!-- Emulator / no-clientID fallback. Mirrors Env.demoAppId (iOS). -->
+				<!-- Emulator. Mirrors Env.demoAppId (iOS). -->
 				<string>app-1-000000000000-ios-0000000000000000</string>
-				<!-- TODO(ios): add REVERSED_CLIENT_ID from GoogleService-Info.plist
-				     once `flutterfire configure` has run, for live builds. -->
+				<!-- Live project. Mirrors the app id of the iOS app registered
+				     under com.lytodmotors.naijapartshub, which is the bundle id
+				     this Xcode target builds. A second iOS app exists in the
+				     Firebase project under the camelCase bundle id
+				     com.lytodmotors.naijaPartsHub; no build produces that
+				     bundle id, so its app id is deliberately NOT registered
+				     here. -->
+				<string>app-1-813389632700-ios-7beb45e69e7929de146cb9</string>
 			</array>
 		</dict>
 	</array>

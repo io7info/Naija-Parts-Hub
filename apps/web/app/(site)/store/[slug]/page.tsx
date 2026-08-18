@@ -1,3 +1,5 @@
+import { cache } from 'react'
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { SITE_DOMAIN } from '@nph/contracts'
 import { notFound } from 'next/navigation'
@@ -22,12 +24,72 @@ import { StoreProducts } from './store-products'
  */
 export const dynamic = 'force-dynamic'
 
+/**
+ * One read per request, shared by generateMetadata and the page body.
+ * See the same helper in the product page for why.
+ */
+const loadStore = cache(getPublicStore)
+
+/**
+ * Per-storefront metadata.
+ *
+ * This is the link dealers actually share. The app's My Store screen offers
+ * "Share Link" and "Copy Link", and both hand naijapartshub.com/store/{slug}
+ * to WhatsApp — where, without this, the preview read "Naija Parts Hub —
+ * Automotive Parts Marketplace" instead of the dealer's own business name.
+ * A dealer promoting their shop was advertising the platform.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>
+}): Promise<Metadata> {
+  const { slug } = await params
+  const result = await loadStore(slug)
+
+  if (!result) return { title: 'Store not found' }
+  const { store, products } = result
+
+  const path = `/store/${slug}`
+  const count = products.length
+  const description =
+    store.about?.trim() ||
+    [
+      `${store.name} — verified automotive parts dealer`,
+      store.tagline || store.state || null,
+      `${count} listing${count === 1 ? '' : 's'} available`,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+
+  return {
+    title: store.name,
+    description,
+    alternates: { canonical: path },
+    openGraph: {
+      title: store.name,
+      description,
+      url: path,
+      type: 'website',
+      // The storefront has no logo of its own, so the first listing photo
+      // stands in — a real part beats a generic placeholder in a link preview.
+      images: products[0]?.image ? [{ url: products[0].image, alt: store.name }] : undefined,
+    },
+    twitter: {
+      card: products[0]?.image ? 'summary_large_image' : 'summary',
+      title: store.name,
+      description,
+      images: products[0]?.image ? [products[0].image] : undefined,
+    },
+  }
+}
+
 export default async function WebStorePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
 
   // getPublicStore filters on status === 'approved' && visible, so a suspended
   // dealer's storefront 404s rather than lingering at a known URL.
-  const result = await getPublicStore(slug)
+  const result = await loadStore(slug)
   if (!result) notFound()
   const { store, products: items } = result
 
@@ -49,9 +111,22 @@ export default async function WebStorePage({ params }: { params: Promise<{ slug:
 
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         {/* Store header */}
-        <div className="-mt-12 flex flex-col gap-4 sm:-mt-14 sm:flex-row sm:items-end sm:justify-between">
+        {/*
+          Only the avatar overlaps the banner.
+
+          The negative margin used to sit on this row, which pulled the name and
+          the contact buttons up with it. Because `items-end` bottom-aligns
+          everything against the 88px avatar, the text block's top landed about
+          twenty pixels ABOVE the banner's lower edge — putting `text-foreground`
+          on `bg-dark` and rendering most of the store name invisible.
+
+          Moving it onto the avatar keeps the overlap that makes this read as a
+          profile header, while the row itself starts below the banner, so no
+          text can ever cross that boundary however long the name or tagline is.
+        */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex items-end gap-4">
-            <div className="rounded-2xl border-4 border-background">
+            <div className="-mt-12 rounded-2xl border-4 border-background sm:-mt-14">
               <StoreInitials name={store.name} size={88} />
             </div>
             <div className="pb-1">

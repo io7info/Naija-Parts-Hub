@@ -13,7 +13,23 @@
 **/*.cer
 **/GoogleService-Info.plist
 **/google-services.json
-**/firebase_options.dart
+# NOT ignored: apps/mobile/lib/firebase_options.dart.
+#
+# It is tracked deliberately, and it is the odd one out in this block. The
+# entries around it are private key material — a leaked upload key has to be
+# reset through Play support and an app signing key cannot be replaced at all.
+# firebase_options.dart holds none of that: apiKey, appId, messagingSenderId,
+# projectId, storageBucket and iosBundleId are client configuration, published
+# by Firebase, shipped inside every APK and IPA, and extractable from a
+# downloaded binary in minutes. Ignoring it never withheld anything from an
+# attacker; it only withheld it from CI, which cannot compile the mobile test
+# suite without it.
+#
+# Backend access is controlled by Firestore/Storage Security Rules, IAM and
+# App Check — not by the secrecy of these identifiers. API key restrictions in
+# Google Cloud (package name + SHA-1 for Android, bundle id for iOS) are
+# worthwhile defence in depth on top of that, but they are not what protects
+# the data, and neither was this ignore rule.
 **/serviceAccountKey*.json
 **/*service-account*.json
 .env

@@ -63,9 +63,11 @@ abstract final class Env {
   /// Placeholder app id for emulator runs — platform-dependent, unavoidably.
   ///
   /// FirebaseCore parses this string rather than treating it as opaque.
-  /// `+[FIRApp validateAppIDFormat:]` requires `1:<project number>:<platform>:
-  /// <hex hash>` and returns NO unless `<platform>` is literally `ios` when
-  /// running on iOS. That makes `configureCore` fail, and
+  /// `+[FIRApp validateAppIDFormat:]` requires the four colon-separated parts
+  /// `1`, project number, platform, hex hash — and returns NO unless the
+  /// platform part is literally `ios` when running on iOS. Angle-bracket
+  /// placeholders are avoided here because Dart renders doc comments as HTML
+  /// and would swallow them. That makes `configureCore` fail, and
   /// `+[FIRApp addAppToAppDictionary:]` answers a failed configure by raising
   /// an NSException — an uncaught Objective-C exception on the platform thread,
   /// which aborts the process with SIGABRT before any Dart handler can run. The
