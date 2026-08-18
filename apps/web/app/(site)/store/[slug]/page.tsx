@@ -1,3 +1,5 @@
+import { cache } from 'react'
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { SITE_DOMAIN } from '@nph/contracts'
 import { notFound } from 'next/navigation'
@@ -22,12 +24,72 @@ import { StoreProducts } from './store-products'
  */
 export const dynamic = 'force-dynamic'
 
+/**
+ * One read per request, shared by generateMetadata and the page body.
+ * See the same helper in the product page for why.
+ */
+const loadStore = cache(getPublicStore)
+
+/**
+ * Per-storefront metadata.
+ *
+ * This is the link dealers actually share. The app's My Store screen offers
+ * "Share Link" and "Copy Link", and both hand naijapartshub.com/store/{slug}
+ * to WhatsApp — where, without this, the preview read "Naija Parts Hub —
+ * Automotive Parts Marketplace" instead of the dealer's own business name.
+ * A dealer promoting their shop was advertising the platform.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>
+}): Promise<Metadata> {
+  const { slug } = await params
+  const result = await loadStore(slug)
+
+  if (!result) return { title: 'Store not found' }
+  const { store, products } = result
+
+  const path = `/store/${slug}`
+  const count = products.length
+  const description =
+    store.about?.trim() ||
+    [
+      `${store.name} — verified automotive parts dealer`,
+      store.tagline || store.state || null,
+      `${count} listing${count === 1 ? '' : 's'} available`,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+
+  return {
+    title: store.name,
+    description,
+    alternates: { canonical: path },
+    openGraph: {
+      title: store.name,
+      description,
+      url: path,
+      type: 'website',
+      // The storefront has no logo of its own, so the first listing photo
+      // stands in — a real part beats a generic placeholder in a link preview.
+      images: products[0]?.image ? [{ url: products[0].image, alt: store.name }] : undefined,
+    },
+    twitter: {
+      card: products[0]?.image ? 'summary_large_image' : 'summary',
+      title: store.name,
+      description,
+      images: products[0]?.image ? [products[0].image] : undefined,
+    },
+  }
+}
+
 export default async function WebStorePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
 
   // getPublicStore filters on status === 'approved' && visible, so a suspended
   // dealer's storefront 404s rather than lingering at a known URL.
-  const result = await getPublicStore(slug)
+  const result = await loadStore(slug)
   if (!result) notFound()
   const { store, products: items } = result
 

@@ -1,3 +1,5 @@
+import { cache } from 'react'
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ChevronRight, MapPin, Info } from 'lucide-react'
@@ -26,11 +28,76 @@ import {
  */
 export const dynamic = 'force-dynamic'
 
+/**
+ * One read per request, shared by generateMetadata and the page body.
+ *
+ * Next calls both for the same request, and `force-dynamic` means nothing is
+ * cached between requests — so without this every product view would bill two
+ * identical Firestore document reads.
+ */
+const loadProduct = cache(getPublicListing)
+
+/**
+ * Per-listing title, description and share image.
+ *
+ * ADR-001 #1 chose Next.js over Flutter Web because "discovery and shareable
+ * links are the growth surface" — and that argument only pays off if each
+ * listing actually has its own metadata. Without this every product page
+ * inherited the root title, so Google saw one title repeated across the whole
+ * catalogue and a part shared to WhatsApp previewed as the site name rather
+ * than the part. The root layout already sets `title.template` and
+ * `metadataBase`; this is the consumer they were waiting for.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>
+}): Promise<Metadata> {
+  const { slug } = await params
+  const product = await loadProduct(slug)
+
+  // Matches the notFound() below rather than inventing a title for a page that
+  // will render as a 404.
+  if (!product) return { title: 'Part not found' }
+
+  const path = `/parts/${slug}`
+  const description = [
+    `${product.condition} ${product.name}`,
+    product.partNumber ? `Part number ${product.partNumber}` : null,
+    product.compatible ? `Fits ${product.compatible}` : null,
+    `${formatNaira(product.price)} from ${product.storeName}`,
+    product.location || null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  return {
+    title: product.name,
+    description,
+    alternates: { canonical: path },
+    openGraph: {
+      title: product.name,
+      description,
+      url: path,
+      type: 'website',
+      images: product.image ? [{ url: product.image, alt: product.name }] : undefined,
+    },
+    twitter: {
+      // summary_large_image with no image renders as an empty card, so the
+      // card type follows whether a photo actually exists.
+      card: product.image ? 'summary_large_image' : 'summary',
+      title: product.name,
+      description,
+      images: product.image ? [product.image] : undefined,
+    },
+  }
+}
+
 export default async function WebProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   // Re-checks publiclyVisible on this single-document path: a removed or
   // suspended listing must 404 rather than stay reachable by its URL.
-  const product = await getPublicListing(slug)
+  const product = await loadProduct(slug)
   if (!product) notFound()
 
   const [storeResult, sameCategory] = await Promise.all([

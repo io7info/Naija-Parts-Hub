@@ -112,7 +112,34 @@ void main() {
       // Android has no equivalent field on FirebaseOptions; the package name is
       // enforced by the google-services plugin at build time, which is why a
       // mismatch fails the build outright rather than at runtime.
-      expect(DefaultFirebaseOptions.android.appId, startsWith('1:813389632700:android:'));
+    });
+
+    test('app ids are the exact production registrations', () {
+      // Pinned in full rather than by prefix, because the Firebase project
+      // contains a duplicate legacy registration on each platform:
+      //
+      //   ios      ...221c2b52  com.lytodmotors.naijaPartsHub    (camelCase)
+      //   android  ...0014618d  com.lytodmotors.naija_parts_hub  (underscored)
+      //
+      // Neither matches a bundle id or package name this repository builds, and
+      // both share the prefix the earlier assertion checked — so a prefix test
+      // could not tell them apart. `flutterfire configure` picks by bundle id
+      // and package name and should select correctly, but it is run by hand and
+      // has already produced these duplicates once. Selecting the wrong one is
+      // silent: initialisation succeeds, and the app reports to an app nobody
+      // reads. Full equality is what makes that a failing build instead.
+      //
+      // The google-services plugin does not cover this. It validates
+      // google-services.json against the package name and says nothing about
+      // what firebase_options.dart contains.
+      expect(
+        DefaultFirebaseOptions.ios.appId,
+        '1:813389632700:ios:7beb45e69e7929de146cb9',
+      );
+      expect(
+        DefaultFirebaseOptions.android.appId,
+        '1:813389632700:android:245993857adde505146cb9',
+      );
     });
 
     test('the two platforms are distinct app registrations', () {
