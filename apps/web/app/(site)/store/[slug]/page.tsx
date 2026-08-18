@@ -104,40 +104,58 @@ export default async function WebStorePage({ params }: { params: Promise<{ slug:
         }}
       />
 
-      {/* Banner */}
-      <div className="relative h-40 bg-dark sm:h-52">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,106,0,0.25),transparent_55%)]" />
-      </div>
+      {/*
+        No cover banner.
 
+        The design pack drew a full-width dark band here, sized like a cover
+        photo. Dealers have no cover image: there is no upload in the app, no
+        field on the store document, and nothing in the SOW that adds one. So
+        it rendered as an empty near-black rectangle on every storefront —
+        shaped like a container for a picture that can never arrive — and it
+        pushed the name, the stats and the products below the fold.
+
+        Removed rather than shrunk. A decorative band that holds nothing is
+        still holding nothing at half the height, and the page reads better
+        without it: the storefront now opens on the dealer's name and their
+        parts, which is what a buyer followed the link for.
+      */}
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
-        {/* Store header */}
         {/*
-          Only the avatar overlaps the banner.
+          Store header.
 
-          The negative margin used to sit on this row, which pulled the name and
-          the contact buttons up with it. Because `items-end` bottom-aligns
-          everything against the 88px avatar, the text block's top landed about
-          twenty pixels ABOVE the banner's lower edge — putting `text-foreground`
-          on `bg-dark` and rendering most of the store name invisible.
+          `items-center`, not `items-end`: the previous alignment existed to
+          stand the avatar on the banner's lower edge, and without the banner it
+          left the name hanging below the avatar's midpoint.
 
-          Moving it onto the avatar keeps the overlap that makes this read as a
-          profile header, while the row itself starts below the banner, so no
-          text can ever cross that boundary however long the name or tagline is.
+          The avatar is 72px rather than 88px and has lost its 4px background
+          border. Both were there to punch it out of the dark band; at 88px on
+          a plain background it overpowered two lines of text.
+
+          `min-w-0` lets a long business name wrap instead of shunting the
+          contact buttons off the right edge, and the name row wraps so the
+          verified badge drops under a long name rather than squashing it —
+          "Kano Heavy Equipment Parts" is not an unusual length here.
+
+          The bottom border does the separating the banner used to do.
         */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex items-end gap-4">
-            <div className="-mt-12 rounded-2xl border-4 border-background sm:-mt-14">
-              <StoreInitials name={store.name} size={88} />
-            </div>
-            <div className="pb-1">
-              <div className="flex items-center gap-2">
-                <h1 className="font-heading text-2xl font-bold text-foreground">{store.name}</h1>
+        <div className="flex flex-col gap-5 border-b border-border pb-6 pt-8 sm:flex-row sm:items-center sm:justify-between sm:pt-10">
+          <div className="flex items-center gap-4">
+            <StoreInitials name={store.name} size={72} />
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <h1 className="font-heading text-2xl font-bold text-foreground sm:text-3xl">
+                  {store.name}
+                </h1>
                 {store.verified && <VerifiedBadge />}
               </div>
-              <p className="mt-1 text-sm text-muted-foreground">{store.tagline}</p>
+              {/* tagline is `city, state` — see toStore — so it earns the pin. */}
+              <p className="mt-1.5 flex items-center gap-1.5 text-sm text-muted-foreground">
+                <MapPin className="size-4 shrink-0 text-orange" />
+                {store.tagline}
+              </p>
             </div>
           </div>
-          <div className="flex gap-2 pb-1">
+          <div className="flex flex-wrap gap-2">
             <CallButton
               phone={store.phone}
               label="Call Store"
