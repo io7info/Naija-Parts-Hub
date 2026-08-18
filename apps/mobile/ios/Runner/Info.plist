@@ -50,13 +50,57 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Naija Parts Hub needs access to your photos so you can add existing images to your listings.</string>
 
-	<!-- TODO(ios): Firebase phone OTP additionally requires
-	     1. an APNs .p8 auth key uploaded to Firebase (paid Apple Developer
-	        account only — this is the long pole on the iOS track), and
-	     2. a CFBundleURLTypes entry containing REVERSED_CLIENT_ID from
-	        GoogleService-Info.plist, which does not exist until
-	        `flutterfire configure` has run.
-	     Without both, phone auth silently degrades to a reCAPTCHA web view. -->
+	<!-- Firebase phone auth callback scheme. REQUIRED, including against the
+	     Local Emulator Suite.
+
+	     This key must exist before any call to verifyPhoneNumber, and its
+	     absence is not a graceful degradation — it is an immediate crash.
+	     FirebaseAuth reads it into an implicitly-unwrapped optional
+	     (Auth.swift: `var mainBundleUrlTypes: [[String: Any]]!`) and
+	     dereferences it on the first line of the function
+	     (PhoneAuthProvider.swift:108-109), so a missing key force-unwraps nil
+	     and takes the process down with EXC_BREAKPOINT. FirebaseAuth does have
+	     a readable error for an unregistered scheme — "Please register custom
+	     URL scheme ... in the app's Info.plist file" — but it can never print,
+	     because the nil unwrap is on the same statement. Present-but-wrong is
+	     diagnosable; absent is a bare trap.
+
+	     None of this is bypassed by useAuthEmulator: the check runs before any
+	     emulator branching.
+
+	     The scheme value is derived by PhoneAuthProvider.init. With no
+	     `clientID` in FirebaseOptions — the emulator case, see
+	     lib/core/firebase_bootstrap.dart — it falls back to the app id with
+	     ':' replaced by '-', prefixed "app-". That is what the entry below is,
+	     matching Env.demoAppId for iOS.
+
+	     After `flutterfire configure` the real options carry a clientID, and
+	     init prefers the REVERSED_CLIENT_ID scheme *if it is registered here*,
+	     falling back to this one otherwise. Add it as a second string in the
+	     same array rather than replacing this one, so emulator and live builds
+	     both work from one Info.plist. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>firebase-auth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<!-- Emulator / no-clientID fallback. Mirrors Env.demoAppId (iOS). -->
+				<string>app-1-000000000000-ios-0000000000000000</string>
+				<!-- TODO(ios): add REVERSED_CLIENT_ID from GoogleService-Info.plist
+				     once `flutterfire configure` has run, for live builds. -->
+			</array>
+		</dict>
+	</array>
+
+	<!-- TODO(ios): phone OTP on a REAL DEVICE against a live project also needs
+	     an APNs .p8 auth key uploaded to Firebase and the Push Notifications
+	     capability (paid Apple Developer account only — the long pole on the
+	     iOS track). Not required on the simulator against the emulator suite,
+	     where the Auth emulator issues codes over REST. -->
 
 	<key>UIApplicationSceneManifest</key>
 	<dict>

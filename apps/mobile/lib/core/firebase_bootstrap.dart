@@ -64,10 +64,13 @@ Future<FirebaseBootstrapResult> initializeFirebase() async {
       // nothing has built [DEFAULT] from google-services.json before this
       // runs. That removal is load-bearing: without it these options lose to
       // the live project and initialisation fails with [duplicate-app].
+      // `appId` comes from Env because the native SDK validates its platform
+      // segment and aborts the process on a mismatch — see Env.demoAppId. Not
+      // const for the same reason: the correct value is only known at runtime.
       await Firebase.initializeApp(
-        options: const FirebaseOptions(
+        options: FirebaseOptions(
           apiKey: Env.demoApiKey,
-          appId: '1:000000000000:android:0000000000000000',
+          appId: Env.demoAppId,
           messagingSenderId: '000000000000',
           projectId: Env.demoProjectId,
           storageBucket: '${Env.demoProjectId}.appspot.com',
