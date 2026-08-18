@@ -111,9 +111,22 @@ export default async function WebStorePage({ params }: { params: Promise<{ slug:
 
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         {/* Store header */}
-        <div className="-mt-12 flex flex-col gap-4 sm:-mt-14 sm:flex-row sm:items-end sm:justify-between">
+        {/*
+          Only the avatar overlaps the banner.
+
+          The negative margin used to sit on this row, which pulled the name and
+          the contact buttons up with it. Because `items-end` bottom-aligns
+          everything against the 88px avatar, the text block's top landed about
+          twenty pixels ABOVE the banner's lower edge — putting `text-foreground`
+          on `bg-dark` and rendering most of the store name invisible.
+
+          Moving it onto the avatar keeps the overlap that makes this read as a
+          profile header, while the row itself starts below the banner, so no
+          text can ever cross that boundary however long the name or tagline is.
+        */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex items-end gap-4">
-            <div className="rounded-2xl border-4 border-background">
+            <div className="-mt-12 rounded-2xl border-4 border-background sm:-mt-14">
               <StoreInitials name={store.name} size={88} />
             </div>
             <div className="pb-1">
