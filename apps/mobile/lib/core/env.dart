@@ -60,6 +60,28 @@ abstract final class Env {
   /// and Firestore tolerate a malformed key; Cloud Functions does not.
   static const String demoApiKey = 'AIzaSyDemoEmulatorKeyNotRealNotUsed1234';
 
+  /// Placeholder app id for emulator runs — platform-dependent, unavoidably.
+  ///
+  /// FirebaseCore parses this string rather than treating it as opaque.
+  /// `+[FIRApp validateAppIDFormat:]` requires `1:<project number>:<platform>:
+  /// <hex hash>` and returns NO unless `<platform>` is literally `ios` when
+  /// running on iOS. That makes `configureCore` fail, and
+  /// `+[FIRApp addAppToAppDictionary:]` answers a failed configure by raising
+  /// an NSException — an uncaught Objective-C exception on the platform thread,
+  /// which aborts the process with SIGABRT before any Dart handler can run. The
+  /// app dies on launch with no Flutter-side error at all.
+  ///
+  /// A single hardcoded `:android:` id therefore worked for the entire Android
+  /// phase and crashed the first time the app was ever launched on iOS.
+  ///
+  /// Only the platform segment is load bearing: for a version-1 id the hash is
+  /// explicitly not verifiable on the client ("the v1 hash algorithm is not
+  /// permitted on the client"), so zeros pass. The project number is never
+  /// checked against anything in emulator mode.
+  static String get demoAppId => Platform.isIOS
+      ? '1:000000000000:ios:0000000000000000'
+      : '1:000000000000:android:0000000000000000';
+
   /// 10.0.2.2 is the Android emulator's alias for the host loopback.
   /// A physical device needs the host's LAN IP passed in explicitly.
   static String get emulatorHost {
