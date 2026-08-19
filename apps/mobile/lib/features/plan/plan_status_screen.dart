@@ -124,16 +124,24 @@ class PlanStatusScreen extends StatelessWidget {
                 ),
               ),
             ] else
-              const Text(
-                'Plans are managed from your account on the Naija Parts Hub website.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: NphFonts.body,
-                  fontSize: 12,
-                  height: 1.5,
-                  color: NphColors.mutedForeground,
-                ),
-              ),
+              // Nothing. Not a placeholder — the absence is the requirement.
+              //
+              // This branch previously read "Plans are managed from your account
+              // on the Naija Parts Hub website." Removing the button and then
+              // naming the website in its place defeats the point: Guideline
+              // 3.1.1 prohibits "buttons, external links, or other calls to
+              // action that direct customers to purchasing mechanisms other than
+              // in-app purchase", and a sentence telling a dealer where to manage
+              // their subscription is a call to action. "Visit our website to
+              // subscribe" is the canonical rejection example and this said the
+              // same thing in politer words.
+              //
+              // Nothing is lost by staying silent. The status banner directly
+              // above already states the plan, the listing allowance and the
+              // expiry, which is what a dealer opening this screen came to find
+              // out. What they cannot do here is buy — and on iOS the correct
+              // answer to that is to say nothing at all, not to point elsewhere.
+              const SizedBox.shrink(),
             const SizedBox(height: NphSpacing.xl),
           ],
         ),
@@ -229,9 +237,17 @@ class PlanStatusScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: NphSpacing.sm),
+          // The advice changes with the platform for the same reason the button
+          // above disappears. "Upgrade to list more parts" is a call to action
+          // toward a purchase, and on iOS it is also useless — there is no
+          // upgrade path on this screen to follow it to. Unpublishing is the
+          // one thing an iOS dealer at the limit can actually do, so that is
+          // what it says. Same rule as the expiry banner on Home.
           Text(
             atLimit
-                ? 'Upgrade to list more parts, or unpublish one to free a slot.'
+                ? (Env.showUpgradeLinks
+                    ? 'Upgrade to list more parts, or unpublish one to free a slot.'
+                    : 'Unpublish a listing to free a slot.')
                 : 'Drafts and archived listings do not count toward your limit.',
             textAlign: TextAlign.center,
             style: TextStyle(
