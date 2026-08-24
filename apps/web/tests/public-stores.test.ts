@@ -62,19 +62,32 @@ describe('the public store directory runs server-side', () => {
 })
 
 describe('only approved, visible stores are public', () => {
-  for (const fn of PUBLIC_STORE_READERS) {
-    it(`${fn} filters on status == 'approved'`, () => {
-      expect(body(fn)).toContain("where('status', '==', 'approved')")
-    })
+  // The predicates used to be repeated in each reader, and this suite checked
+  // each body for them. They now live in one `publicDealers()` helper, because
+  // auto mechanics added a third clause and three copies of a three-part
+  // filter is three chances to omit one.
+  //
+  // The guarantee is unchanged, so the assertions moved rather than relaxed:
+  // the helper must carry every clause, and every reader must go through it.
+  // Checking a reader's own body for `where(...)` would now pass for a
+  // function that queried `stores` directly with no filter at all.
+  it('the shared helper carries every public predicate', () => {
+    const helper = REPO.slice(REPO.indexOf('function publicDealers'))
+    expect(helper).toContain("where('status', '==', 'approved')")
+    expect(helper).toContain("where('visible', '==', true)")
+    expect(helper).toContain("where('businessType', '==', 'parts_dealer')")
+  })
 
-    it(`${fn} filters on visible == true`, () => {
-      expect(body(fn)).toContain("where('visible', '==', true)")
+  for (const fn of PUBLIC_STORE_READERS) {
+    it(`${fn} reads through the guarded helper`, () => {
+      expect(body(fn)).toContain('publicDealers(')
     })
   }
 
-  it('every stores query in this file carries both filters', () => {
-    // Catches a new public reader added without them, which the per-function
-    // assertions above would not see.
+  it('every stores query in this file carries every filter', () => {
+    // Catches a new public reader that hand-rolls its own query instead of
+    // using the helper — which the per-function assertions above would not
+    // see, because they only check the readers already listed.
     const queries = REPO.split("collection('stores')").slice(1)
     expect(queries.length).toBeGreaterThan(0)
 
@@ -88,6 +101,9 @@ describe('only approved, visible stores are public', () => {
       )
       expect(window, 'a stores query without the visibility filter').toContain(
         "where('visible', '==', true)",
+      )
+      expect(window, 'a stores query that would expose mechanics as dealers').toContain(
+        "where('businessType', '==', 'parts_dealer')",
       )
     }
   })

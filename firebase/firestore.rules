@@ -63,17 +63,44 @@ service cloud.firestore {
     }
 
     // Mirrors STORE_BACKEND_FIELDS
+    // businessType decides which quota, which public surface and which rules
+    // apply, so it belongs with approval and visibility. identity is the
+    // BVN/NIN result: client-writable would let a mechanic mark themselves
+    // verified and skip the check the client is paying a provider to perform.
+    //
+    // Comments stay outside the array literal — scripts/check-rules-sync.mjs
+    // parses it to compare against the contracts, and reads anything between
+    // the brackets as an entry.
     function storeBackendFields() {
       return ['slug', 'status', 'rejectionReason', 'visible',
               'activeListingCount', 'subscription', 'createdAt',
-              'approvedAt', 'reviewedBy'];
+              'approvedAt', 'reviewedBy', 'businessType', 'identity'];
     }
 
-    // Mirrors STORE_DEALER_FIELDS
+    // Mirrors STORE_DEALER_FIELDS.
+    //
+    // `mechanic` holds specialties and workshop photos — owner-editable like
+    // any other field they typed. Size caps are in validMechanicProfile.
     function storeDealerFields() {
       return ['businessName', 'ownerName', 'phone', 'whatsapp', 'cacNumber',
               'address', 'state', 'city', 'description', 'email', 'landmark',
-              'automotiveCategory', 'updatedAt'];
+              'automotiveCategory', 'updatedAt', 'mechanic'];
+    }
+
+    // A mechanic, per the stored document rather than the incoming write.
+    //
+    // Reads `resource`, never `request.resource`: businessType is backend-
+    // controlled, so the authoritative value is the one already saved. Taking
+    // it from the incoming payload would let a dealer claim to be a mechanic
+    // for the length of one write and escape the CAC requirement.
+    //
+    // `.get(..., 'parts_dealer')` because stores registered before mechanics
+    // existed carry no such field, and a bare property access on a missing key
+    // raises rather than evaluating false — which would deny every profile
+    // edit for exactly those legacy dealers.
+    function isMechanicDoc() {
+      return resource != null
+          && resource.data.get('businessType', 'parts_dealer') == 'mechanic';
     }
 
     // Mirrors LISTING_BACKEND_FIELDS
@@ -115,11 +142,46 @@ service cloud.firestore {
       return v is string && v.size() > 0 && v.size() <= maxLen;
     }
 
-    function validStoreProfile(d) {
+    /**
+     * The mechanic half of the profile, when present.
+     *
+     * Absent is valid — dealers never send it. When present the keys are
+     * pinned and both arrays are capped: an uncapped list here is a way to
+     * grow one document toward the 1 MB limit until it can no longer be read,
+     * which would lock the owner out of their own store.
+     *
+     * Contents are not validated against MECHANIC_SPECIALTIES here. Rules
+     * cannot import the list, a hand-copied duplicate would drift, and an
+     * unrecognised specialty is a display nuisance rather than a security
+     * hole. registerStore filters it against the real list.
+     */
+    function validMechanicProfile(d) {
+      return !d.keys().hasAny(['mechanic'])
+          || (
+            d.mechanic.keys().hasOnly(['specialties', 'photos'])
+            && d.mechanic.specialties is list
+            && d.mechanic.specialties.size() >= 1
+            && d.mechanic.specialties.size() <= 20
+            && d.mechanic.photos is list
+            // MAX_WORKSHOP_PHOTOS
+            && d.mechanic.photos.size() <= 10
+          );
+    }
+
+    /**
+     * `requireCac` is false for mechanics.
+     *
+     * Client decision: CAC is a *business* registration, and most independent
+     * mechanics are not incorporated. Identity is proven by BVN and NIN
+     * instead. Dealers are unchanged — for them this is still required.
+     */
+    function validStoreProfile(d, requireCac) {
       return isFilled(d.businessName, 100)
           && isFilled(d.ownerName, 100)
           && isFilled(d.phone, 20)
-          && isFilled(d.cacNumber, 40)
+          && (requireCac
+                ? isFilled(d.cacNumber, 40)
+                : (d.get('cacNumber', '') is string && d.get('cacNumber', '').size() <= 40))
           && isFilled(d.address, 200)
           && isFilled(d.state, 60)
           && isFilled(d.city, 60)
@@ -194,7 +256,8 @@ service cloud.firestore {
           isStoreOwner(storeId)
           && onlyTouches(storeDealerFields())
           && touchesNone(storeBackendFields())
-          && validStoreProfile(request.resource.data)
+          && validStoreProfile(request.resource.data, !isMechanicDoc())
+          && validMechanicProfile(request.resource.data)
           // A suspended dealer cannot edit their way back into visibility.
           && resource.data.status != 'suspended'
         );

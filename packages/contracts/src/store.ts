@@ -7,8 +7,82 @@ import type { Timestamp } from './common';
  * Collection: `stores/{storeId}`
  */
 
+/**
+ * What kind of business this document describes.
+ *
+ * Parts dealers sell inventory; mechanics advertise services. They share an
+ * identity (the document id is the uid either way), an approval lifecycle, a
+ * slug and an admin review queue — which is why they share a collection rather
+ * than living in `stores` and `mechanics` separately. Splitting them would
+ * duplicate all four, and `deleteAccount` would need two paths through the
+ * same cleanup.
+ *
+ * A union rather than a boolean so a third type — a towing service, a parts
+ * importer — is a new member here rather than another migration.
+ *
+ * BACKWARD COMPATIBILITY: stores registered before this existed have no
+ * `businessType` field. Firestore cannot express "equals X or is absent" in
+ * one query, and `!=` also skips documents where the field is missing, so a
+ * legacy dealer would silently vanish from every filtered query. They are
+ * backfilled to 'parts_dealer' by scripts/backfill-business-type.mjs; treat a
+ * missing value as 'parts_dealer' anywhere a document might predate that run.
+ */
+export type BusinessType = 'parts_dealer' | 'mechanic';
+
 /** SOW §3: registration lifecycle, driven by the admin portal. */
 export type StoreStatus = 'pending' | 'approved' | 'rejected' | 'suspended';
+
+/**
+ * Where a mechanic's identity check stands.
+ *
+ * 'unverified' is the state a mechanic registers into, and it is a hard block
+ * on approval — the client requires verified BVN and NIN before a mechanic can
+ * be approved. 'manual_review' exists because a name that disagrees with the
+ * government record is not automatically fraud: people marry, records carry
+ * typos, and a middle name is often dropped. An admin decides those.
+ */
+export type IdentityStatus = 'unverified' | 'pending' | 'verified' | 'failed' | 'manual_review';
+
+/**
+ * The retained result of an identity check. Never the identifiers themselves.
+ *
+ * A NIN lookup returns full name, date of birth, address, photograph, and —
+ * genuinely — religion. None of that is kept. What survives is the minimum
+ * needed to answer "was this person verified, when, by whom, and does the name
+ * match", plus enough to trace a dispute back to the provider's own record.
+ *
+ * `bvnFingerprint` and `ninFingerprint` are keyed HMACs, not hashes: a plain
+ * hash of an 11-digit number is trivially reversible by brute force, since the
+ * whole keyspace is 10^11. The HMAC key lives in Secret Manager, so an
+ * attacker with a copy of Firestore still cannot recover an identifier. They
+ * exist so one person cannot register several mechanic accounts.
+ */
+export interface IdentityVerification {
+  status: IdentityStatus;
+  /** Which provider produced this result, so a future switch stays auditable. */
+  provider: string | null;
+  /** The provider's own reference, for disputes and support. */
+  reference: string | null;
+  verifiedAt: Timestamp | null;
+
+  /** Display only — enough for a dealer to recognise which number they used. */
+  bvnLast4: string | null;
+  ninLast4: string | null;
+
+  /** Keyed HMAC. Duplicate detection without holding the identifier. */
+  bvnFingerprint: string | null;
+  ninFingerprint: string | null;
+
+  /** Did the government record's name match what they submitted? */
+  nameMatch: boolean | null;
+  /** The provider's legal name. Admin-only; never public, never in a list view. */
+  verifiedName: string | null;
+
+  /** Attempts so far. Each provider call costs money — see the rate limit. */
+  attempts: number;
+  /** Set after repeated failures; blocks further attempts until it passes. */
+  lockedUntil: Timestamp | null;
+}
 
 export type SubscriptionPlan = 'free' | 'monthly' | 'yearly';
 
@@ -61,11 +135,51 @@ export interface StoreProfileInput {
   automotiveCategory?: string;
 }
 
+/**
+ * The mechanic-only half of the profile.
+ *
+ * Optional on `Store` and absent entirely for dealers, rather than a set of
+ * nullable columns spread across the parent. That keeps a dealer document
+ * exactly the shape it is today — no new fields, no rewrite, no behaviour
+ * change — which is the constraint the client set.
+ *
+ * Photos are Storage download URLs under `stores/{uid}/workshop/`. They are
+ * NOT listings: a listing carries a price, a category, a quantity, search
+ * tokens and a `publiclyVisible` flag, feeds the parts marketplace, and counts
+ * against a subscription quota. A photograph of a workshop has none of those
+ * properties and modelling it as inventory would put mechanics into parts
+ * search results.
+ */
+export interface MechanicProfile {
+  /** From MECHANIC_SPECIALTIES. At least one, capped at the list length. */
+  specialties: string[];
+  /** Storage URLs, at most MAX_WORKSHOP_PHOTOS. */
+  photos: string[];
+}
+
 export interface Store extends StoreProfileInput {
   storeId: string;
 
+  /**
+   * Absent on documents written before mechanics existed. Read it through
+   * `businessTypeOf()` rather than directly, which resolves the legacy case.
+   */
+  businessType?: BusinessType;
+
+  /** Present only when businessType is 'mechanic'. */
+  mechanic?: MechanicProfile;
+
   // --- Backend-controlled below this line ---------------------------------
   // Dealers have read-only access. Enforced by security rules; see security.ts.
+
+  /**
+   * Mechanic identity check. Backend-only in every direction: the client may
+   * never write it, and only the owner and admins may read it.
+   *
+   * Absent for dealers — the client was explicit that BVN and NIN are not to
+   * be added to the parts dealer flow.
+   */
+  identity?: IdentityVerification;
 
   /** Public URL segment: naijapartshub.com/store/{slug}. SOW §6. */
   slug: string;
@@ -96,4 +210,43 @@ export interface Store extends StoreProfileInput {
 export interface StoreSlugReservation {
   storeId: string;
   createdAt: Timestamp;
+}
+
+/**
+ * The business type of a store, resolving the legacy case.
+ *
+ * Every document written before mechanics existed is a parts dealer, and none
+ * of them carry the field. Reading `store.businessType` directly gives
+ * `undefined` for those, which compares unequal to both members of the union
+ * and silently drops them out of any branch. This is the single place that
+ * decision is made, so it cannot be made differently in two files.
+ *
+ * Note this does NOT rescue Firestore *queries* — a `where` clause still can
+ * not match a missing field, which is why the backfill exists. Use this for
+ * documents already in hand.
+ */
+export function businessTypeOf(store: Pick<Store, 'businessType'> | null | undefined): BusinessType {
+  return store?.businessType === 'mechanic' ? 'mechanic' : 'parts_dealer';
+}
+
+/** Whether this business sells parts, and therefore has listings and a quota. */
+export function isPartsDealer(store: Pick<Store, 'businessType'> | null | undefined): boolean {
+  return businessTypeOf(store) === 'parts_dealer';
+}
+
+/** Whether this business advertises services, and therefore has no listings. */
+export function isMechanic(store: Pick<Store, 'businessType'> | null | undefined): boolean {
+  return businessTypeOf(store) === 'mechanic';
+}
+
+/**
+ * Whether a mechanic has cleared identity checks.
+ *
+ * The client requires verified BVN and NIN before a mechanic may be approved,
+ * so this gates the admin action rather than merely decorating it. Dealers are
+ * unaffected: they have no `identity` block and this is never consulted for
+ * them.
+ */
+export function identityVerified(store: Pick<Store, 'identity'> | null | undefined): boolean {
+  return store?.identity?.status === 'verified';
 }

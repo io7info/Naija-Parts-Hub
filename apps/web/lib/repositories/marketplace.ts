@@ -208,14 +208,34 @@ export async function getPublicListing(listingId: string): Promise<Product | nul
   return toProduct(doc.id, data)
 }
 
-/** Approved, visible stores for the directory. */
-export async function listPublicStores(limit = 60): Promise<Store[]> {
-  const snapshot = await getAdminDb()
+/**
+ * The public-store predicate, in one place.
+ *
+ * Every public query over `stores` must carry all three clauses. The first two
+ * mirror the security rule; the third keeps auto mechanics out of surfaces
+ * built for parts dealers — the dealer directory, the storefront route, and
+ * the state filter derived from them.
+ *
+ * A missed filter here does not fail loudly: a mechanic simply appears as a
+ * dealer, with an inventory count of zero and a storefront selling nothing.
+ * tests/marketplace.test.ts asserts every `collection('stores')` query in this
+ * file applies it.
+ *
+ * Legacy stores carry no `businessType` at all, and Firestore cannot match a
+ * missing field — see functions/scripts/backfill-business-type.mjs, which must
+ * have run before this filter is deployed.
+ */
+function publicDealers(db: FirebaseFirestore.Firestore) {
+  return db
     .collection('stores')
     .where('status', '==', 'approved')
     .where('visible', '==', true)
-    .limit(limit)
-    .get()
+    .where('businessType', '==', 'parts_dealer')
+}
+
+/** Approved, visible stores for the directory. */
+export async function listPublicStores(limit = 60): Promise<Store[]> {
+  const snapshot = await publicDealers(getAdminDb()).limit(limit).get()
 
   return snapshot.docs
     .map((doc) => toStore(doc.data()))
@@ -234,13 +254,7 @@ export async function listPublicStores(limit = 60): Promise<Store[]> {
 export async function getPublicStore(
   slug: string,
 ): Promise<{ store: Store; products: Product[] } | null> {
-  const snapshot = await getAdminDb()
-    .collection('stores')
-    .where('slug', '==', slug)
-    .where('status', '==', 'approved')
-    .where('visible', '==', true)
-    .limit(1)
-    .get()
+  const snapshot = await publicDealers(getAdminDb()).where('slug', '==', slug).limit(1).get()
 
   if (snapshot.empty) return null
 
@@ -266,12 +280,7 @@ export async function getPublicStore(
  * store's state is the same state the listings denormalize onto themselves.
  */
 export async function listMarketplaceStates(): Promise<string[]> {
-  const snapshot = await getAdminDb()
-    .collection('stores')
-    .where('status', '==', 'approved')
-    .where('visible', '==', true)
-    .select('state')
-    .get()
+  const snapshot = await publicDealers(getAdminDb()).select('state').get()
 
   return [...new Set(snapshot.docs.map((d) => d.get('state') as string).filter(Boolean))].sort()
 }

@@ -60,6 +60,9 @@ export const FIELD_LIMITS = {
   address: 200,
   email: 120,
   landmark: 120,
+  /** Nigerian BVN and NIN are both exactly 11 digits. */
+  bvn: 11,
+  nin: 11,
   listingName: 140,
   listingDescription: 2000,
   brand: 60,
@@ -91,6 +94,61 @@ export type AutomotiveCategory = (typeof AUTOMOTIVE_CATEGORIES)[number];
 
 /** Firestore caps `array-contains-any` / `in` at 30 values per query. */
 export const MAX_SEARCH_TOKENS = 60;
+
+// --- Auto mechanics ---------------------------------------------------------
+
+/**
+ * The services a mechanic can advertise.
+ *
+ * A fixed list, like AUTOMOTIVE_CATEGORIES and for the same reason: buyers
+ * filter by it. Free text would fragment the same trade across "AC repair",
+ * "aircon", "A/C", and "cooling", and no filter could reunite them.
+ *
+ * The ids are stored; the labels are display. Storing labels would mean a
+ * wording change silently orphaning every mechanic filed under the old one.
+ */
+export const MECHANIC_SPECIALTIES = [
+  { id: 'engine', label: 'Engine repair' },
+  { id: 'transmission', label: 'Transmission repair' },
+  { id: 'brakes', label: 'Brake repair' },
+  { id: 'suspension', label: 'Suspension' },
+  { id: 'electrical', label: 'Auto electrical' },
+  { id: 'ac', label: 'AC repair' },
+  { id: 'exhaust', label: 'Muffler / exhaust' },
+  { id: 'bodywork', label: 'Body work & panel beating' },
+  { id: 'diagnostics', label: 'Computer diagnostics' },
+  { id: 'general', label: 'General mechanic' },
+] as const;
+
+export type MechanicSpecialtyId = (typeof MECHANIC_SPECIALTIES)[number]['id'];
+
+/** Client requirement: a mechanic may show up to ten photographs of their work. */
+export const MAX_WORKSHOP_PHOTOS = 10;
+
+/** A mechanic must advertise at least one service, or they are unfindable. */
+export const MIN_MECHANIC_SPECIALTIES = 1;
+
+/**
+ * How closely the government record's name must match the submitted name.
+ *
+ * Not an exact-match check. Nigerian records routinely differ from what
+ * someone types by a dropped middle name, a maiden name, a transposition, or
+ * a diacritic — rejecting those outright would fail honest mechanics while
+ * catching no fraud. Below this threshold the registration goes to
+ * `manual_review` for an admin rather than being refused outright.
+ */
+export const IDENTITY_NAME_MATCH_THRESHOLD = 0.8;
+
+/**
+ * Identity attempts allowed before a cooldown.
+ *
+ * Every attempt is a paid provider call, so an unthrottled endpoint is a way
+ * to spend the client's money rather than merely a nuisance.
+ */
+export const IDENTITY_MAX_ATTEMPTS = 5;
+
+/** How long a locked-out account waits before it may try again. */
+export const IDENTITY_LOCKOUT_MINUTES = 60;
 
 // --- Deployment ------------------------------------------------------------
 

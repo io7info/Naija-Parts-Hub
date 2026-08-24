@@ -55,6 +55,25 @@ service firebase.storage {
       allow delete: if isOwner(storeId) || isAdmin();
     }
 
+    // Mechanic workshop and completed-work photographs.
+    //
+    // A sibling of listings/ rather than a reuse of it: these are not
+    // inventory. They carry no price, category or quantity, they never enter
+    // the parts marketplace, and they are capped at MAX_WORKSHOP_PHOTOS by the
+    // Firestore rule on the document that references them rather than by a
+    // quota. Sharing the listings path would have made a workshop photo
+    // indistinguishable from a part on sale at the storage layer.
+    //
+    // Publicly readable for the same reason listing images are: the mechanic
+    // profile page renders them to signed-out visitors.
+    match /stores/{storeId}/workshop/{imageId} {
+      allow read: if true;
+      allow create, update: if isOwner(storeId)
+        && withinSizeLimit()
+        && isAllowedImageType();
+      allow delete: if isOwner(storeId) || isAdmin();
+    }
+
     // Store logo / avatar, same constraints.
     match /stores/{storeId}/profile/{imageId} {
       allow read: if true;
