@@ -19,11 +19,35 @@ type Filter = (typeof filters)[number] | 'all'
 
 type ReviewAction = 'approve' | 'reject' | 'suspend' | 'reactivate'
 
+/** Plain wording for an administrator, not the stored enum. */
+const IDENTITY_LABEL: Record<string, string> = {
+  verified: 'Verified',
+  manual_review: 'Needs manual review — names disagree',
+  failed: 'Failed — identifiers not found',
+  pending: 'Check in progress',
+  unverified: 'Not verified',
+}
+
+/**
+ * Dealers and mechanics are reviewed against different evidence — a CAC
+ * number against verified BVN and NIN — so they are separated here rather
+ * than mixed into one queue with a column to squint at.
+ */
+const TYPES = [
+  { id: 'all', label: 'All types' },
+  { id: 'parts_dealer', label: 'Parts Dealers' },
+  { id: 'mechanic', label: 'Mechanics' },
+] as const
+type TypeFilter = (typeof TYPES)[number]['id']
+
 export function VerificationClient({ businesses }: { businesses: AdminBusiness[] }) {
   const [filter, setFilter] = useState<Filter>('pending')
+  const [type, setType] = useState<TypeFilter>('all')
   const [selected, setSelected] = useState<AdminBusiness | null>(null)
 
-  const rows = businesses.filter((b) => (filter === 'all' ? true : b.status === filter))
+  const rows = businesses
+    .filter((b) => (filter === 'all' ? true : b.status === filter))
+    .filter((b) => (type === 'all' ? true : b.businessType === type))
 
   return (
     <div>
@@ -62,13 +86,45 @@ export function VerificationClient({ businesses }: { businesses: AdminBusiness[]
           })}
         </div>
 
+        <div className="mt-3 flex flex-wrap gap-2">
+          {TYPES.map((t) => {
+            const count =
+              t.id === 'all'
+                ? businesses.length
+                : businesses.filter((b) => b.businessType === t.id).length
+            return (
+              <button
+                key={t.id}
+                onClick={() => setType(t.id)}
+                className={cn(
+                  'rounded-full px-3 py-1.5 text-xs font-semibold transition-colors',
+                  type === t.id
+                    ? 'bg-foreground text-white'
+                    : 'border border-border bg-card text-foreground hover:border-orange/40',
+                )}
+              >
+                {t.label}
+                <span
+                  className={cn(
+                    'ml-2 rounded-full px-1.5 py-0.5 text-[10px]',
+                    type === t.id ? 'bg-white/20' : 'bg-muted text-muted-foreground',
+                  )}
+                >
+                  {count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
         <div className="mt-5 overflow-x-auto rounded-2xl border border-border bg-card">
           <table className="w-full min-w-[860px] text-sm">
             <thead>
               <tr className="border-b border-border bg-warm text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <th className="px-4 py-3">Business Name</th>
+                <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Owner</th>
-                <th className="px-4 py-3">CAC Number</th>
+                <th className="px-4 py-3">CAC / Identity</th>
                 <th className="px-4 py-3">Phone</th>
                 <th className="px-4 py-3">Location</th>
                 <th className="px-4 py-3">Submitted</th>
@@ -80,8 +136,21 @@ export function VerificationClient({ businesses }: { businesses: AdminBusiness[]
               {rows.map((b) => (
                 <tr key={b.id} className="border-b border-border last:border-0">
                   <td className="px-4 py-3 font-semibold text-foreground">{b.name}</td>
+                  <td className="px-4 py-3">
+                    <TypeBadge type={b.businessType} />
+                  </td>
                   <td className="px-4 py-3 text-muted-foreground">{b.owner}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{b.cac}</td>
+                  <td className="px-4 py-3 text-xs">
+                    {/* One column, because the two are the same thing: the
+                        evidence this business is who it claims to be. A
+                        dealer proves it with a CAC number, a mechanic with a
+                        verified identity. */}
+                    {b.businessType === 'mechanic' ? (
+                      <IdentityBadge identity={b.identity} />
+                    ) : (
+                      <span className="font-mono text-muted-foreground">{b.cac}</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-muted-foreground">{b.phone}</td>
                   <td className="px-4 py-3 text-muted-foreground">{b.location}</td>
                   <td className="px-4 py-3 text-muted-foreground">{b.submitted}</td>
@@ -100,7 +169,7 @@ export function VerificationClient({ businesses }: { businesses: AdminBusiness[]
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-muted-foreground">
+                  <td colSpan={9} className="px-4 py-10 text-center text-muted-foreground">
                     {businesses.length === 0
                       ? 'No dealers have registered yet.'
                       : `No businesses in this category.`}
@@ -202,8 +271,15 @@ function DetailDrawer({
           )}
 
           <Section title="Business Information">
+            <Row label="Type" value={business.businessType === 'mechanic' ? 'Auto Mechanic' : 'Parts Dealer'} />
             <Row label="Owner / Contact" value={business.owner} />
-            <Row label="CAC Registration" value={business.cac} mono />
+            <Row
+              label="CAC Registration"
+              // Optional for mechanics — most independent workshops are not
+              // incorporated, and they prove identity with BVN and NIN instead.
+              value={business.cac && business.cac !== '—' ? business.cac : business.businessType === 'mechanic' ? 'Not provided (optional)' : '—'}
+              mono
+            />
             <Row
               label="Description"
               value={business.description || 'No description provided'}
@@ -216,8 +292,74 @@ function DetailDrawer({
             <IconRow icon={MapPin} value={business.address} />
           </Section>
 
+          {business.businessType === 'mechanic' && (
+            <Section title="Services">
+              <Row
+                label="Advertised"
+                value={business.services.length > 0 ? business.services.join(', ') : 'None selected'}
+              />
+              <Row label="Workshop photos" value={String(business.photoCount)} />
+            </Section>
+          )}
+
+          {business.businessType === 'mechanic' && (
+            <Section title="Identity Verification">
+              {/*
+                The evidence an approval rests on. adminReviewStore refuses to
+                approve a mechanic who is not 'verified', so this is what makes
+                that refusal legible rather than a mysterious error.
+
+                Only the last four digits appear. The full numbers were never
+                stored — they existed inside one Cloud Function for the length
+                of one provider call — and the fingerprints are for duplicate
+                detection, not for reading.
+              */}
+              {business.identity ? (
+                <>
+                  <Row label="Status" value={IDENTITY_LABEL[business.identity.status] ?? business.identity.status} />
+                  <Row label="BVN" value={business.identity.bvnLast4 ? `••••••• ${business.identity.bvnLast4}` : 'Not submitted'} mono />
+                  <Row label="NIN" value={business.identity.ninLast4 ? `••••••• ${business.identity.ninLast4}` : 'Not submitted'} mono />
+                  {/* The comparison an administrator resolving a manual review
+                      actually has to make: does the government record agree
+                      with the name on the application? */}
+                  <Row label="Name on record" value={business.identity.verifiedName ?? '—'} />
+                  <Row
+                    label="Name match"
+                    value={
+                      business.identity.nameMatch === null
+                        ? '—'
+                        : business.identity.nameMatch
+                          ? 'Matches submitted name'
+                          : 'Does NOT match — compare above'
+                    }
+                  />
+                  <Row label="Verified at" value={business.identity.verifiedAt} />
+                  <Row label="Attempts" value={String(business.identity.attempts)} />
+                  {business.identity.reverificationRequired && (
+                    <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
+                      This mechanic was verified using a fingerprint key that has since been
+                      withdrawn. They must verify again before they can be approved — this is a
+                      platform action, not a failure on their part.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No identity check has been completed. This mechanic cannot be approved yet.
+                </p>
+              )}
+            </Section>
+          )}
+
           <Section title="Store">
-            <IconRow icon={Store} value={business.slug ? `/store/${business.slug}` : 'No slug'} />
+            <IconRow
+              icon={Store}
+              value={
+                business.slug
+                  ? `/${business.businessType === 'mechanic' ? 'mechanic' : 'store'}/${business.slug}`
+                  : 'No slug'
+              }
+            />
             <IconRow icon={FileText} value={`Submitted ${business.submitted}`} />
           </Section>
 
@@ -355,5 +497,69 @@ function IconRow({ icon: Icon, value }: { icon: typeof Phone; value: string }) {
       <Icon className="size-4 shrink-0 text-muted-foreground" />
       <span className="break-all">{value}</span>
     </div>
+  )
+}
+
+/** Which intake this application came through. */
+function TypeBadge({ type }: { type: AdminBusiness['businessType'] }) {
+  const mechanic = type === 'mechanic'
+  return (
+    <span
+      className={cn(
+        'inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold',
+        mechanic ? 'bg-blue-50 text-blue-700' : 'bg-orange/10 text-orange',
+      )}
+    >
+      {mechanic ? 'Mechanic' : 'Parts Dealer'}
+    </span>
+  )
+}
+
+/**
+ * BVN/NIN verification state for a mechanic.
+ *
+ * Not decoration: `adminReviewStore` refuses to approve a mechanic whose
+ * status is not 'verified', so this explains a button that would otherwise
+ * fail with an error the administrator could not act on.
+ *
+ * Shows the status, and on hover the last four digits of each identifier.
+ * The full numbers were never stored, the fingerprints are meaningless here,
+ * and neither belongs in a list view.
+ */
+function IdentityBadge({ identity }: { identity: AdminBusiness['identity'] }) {
+  if (!identity) {
+    return <span className="text-muted-foreground">Not started</span>
+  }
+
+  const tone: Record<string, string> = {
+    verified: 'bg-success/10 text-success',
+    manual_review: 'bg-amber-50 text-amber-700',
+    failed: 'bg-destructive/10 text-destructive',
+    pending: 'bg-muted text-muted-foreground',
+    unverified: 'bg-muted text-muted-foreground',
+  }
+
+  const label: Record<string, string> = {
+    verified: 'ID verified',
+    manual_review: 'Needs review',
+    failed: 'ID failed',
+    pending: 'Checking…',
+    unverified: identity.reverificationRequired ? 'Re-verify required' : 'Not verified',
+  }
+
+  return (
+    <span
+      title={
+        identity.bvnLast4 || identity.ninLast4
+          ? `BVN ••••${identity.bvnLast4 ?? '––'} · NIN ••••${identity.ninLast4 ?? '––'}`
+          : 'No identity check completed'
+      }
+      className={cn(
+        'inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold',
+        tone[identity.status] ?? 'bg-muted text-muted-foreground',
+      )}
+    >
+      {label[identity.status] ?? identity.status}
+    </span>
   )
 }

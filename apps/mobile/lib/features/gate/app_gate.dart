@@ -11,7 +11,8 @@ import '../../services/auth_service.dart';
 import '../../services/store_service.dart';
 import '../auth/phone_login_screen.dart';
 import '../pending/pending_screen.dart';
-import '../registration/registration_screen.dart';
+import '../registration/business_type_screen.dart';
+import '../shell/mechanic_shell.dart';
 import '../shell/main_shell.dart';
 import '../splash/splash_screen.dart';
 
@@ -66,12 +67,18 @@ class AppGate extends ConsumerWidget {
             // registered. Straight into the wizard: an interstitial "you need
             // to register" screen would be a tap between them and the only
             // action available.
-            if (s == null) return const RegistrationScreen();
+            // No store document yet. The entry point decides whether a
+            // business-type choice is offered at all — when mechanic signup is
+            // off, it is the dealer wizard directly, exactly as before.
+            if (s == null) return registrationEntryPoint();
 
             return switch (s.status) {
-              // Home is the landing tab, per the approved design. The dealer
-              // dashboard lives behind My Store.
-              StoreStatus.approved => MainShell(store: s),
+              // Approved businesses land in the shell for their type. A
+              // mechanic has no listings, no quota and no Add Listing tab, so
+              // MainShell with three tabs hidden would be a dealer's app with
+              // holes in it — see MechanicShell.
+              StoreStatus.approved =>
+                s.isMechanic ? MechanicShell(store: s) : MainShell(store: s),
               StoreStatus.pending ||
               StoreStatus.rejected ||
               StoreStatus.suspended =>

@@ -1,8 +1,19 @@
 import 'server-only'
 
-import type { StoreStatus } from '@nph/contracts'
+import {
+  MECHANIC_SPECIALTIES,
+  businessTypeOf,
+  type BusinessType,
+  type IdentityStatus,
+  type StoreStatus,
+} from '@nph/contracts'
 
 import { getAdminDb } from '../firebase-admin'
+
+/** Specialty ids are stored; labels are display. Unknown ids are dropped. */
+const SPECIALTY_LABELS: ReadonlyMap<string, string> = new Map<string, string>(
+  MECHANIC_SPECIALTIES.map((s) => [s.id, s.label]),
+)
 
 /**
  * Store reads for the admin console.
@@ -21,6 +32,14 @@ import { getAdminDb } from '../firebase-admin'
 /** The shape the approved verification UI renders. */
 export type AdminBusiness = {
   id: string
+  /**
+   * Which intake this application came through.
+   *
+   * Dealers and mechanics are reviewed against different criteria — a dealer
+   * supplies a CAC number, a mechanic supplies verified BVN and NIN — so an
+   * administrator has to be able to tell them apart before deciding anything.
+   */
+  businessType: BusinessType
   name: string
   owner: string
   cac: string
@@ -35,6 +54,35 @@ export type AdminBusiness = {
   slug: string
   activeListingCount: number
   rejectionReason: string | null
+
+  /** Mechanics only. Services advertised, for the reviewer's context. */
+  services: string[]
+  /** Mechanics only. Count alone — the photos themselves are on the profile. */
+  photoCount: number
+
+  /**
+   * Identity verification, mechanics only.
+   *
+   * Carries the status, the last four digits and the government name — enough
+   * for an administrator to resolve a manual review, and nothing more. The
+   * fingerprints are absent: they exist for duplicate detection and would be
+   * meaningless here, and the raw identifiers were never stored at all.
+   *
+   * `adminReviewStore` refuses to approve a mechanic whose status is not
+   * 'verified', so this is not merely informational — it explains a button
+   * that will otherwise fail.
+   */
+  identity: {
+    status: IdentityStatus
+    verifiedName: string | null
+    nameMatch: boolean | null
+    bvnLast4: string | null
+    ninLast4: string | null
+    verifiedAt: string
+    attempts: number
+    /** Set when a withdrawn fingerprint key forced re-verification. */
+    reverificationRequired: boolean
+  } | null
 }
 
 const DATE = new Intl.DateTimeFormat('en-NG', {
@@ -58,8 +106,35 @@ function formatSubmitted(value: unknown): string {
 function toBusiness(id: string, d: Record<string, unknown>): AdminBusiness {
   const city = (d.city as string) ?? ''
   const state = (d.state as string) ?? ''
+
+  // Legacy stores carry no businessType — every one of them is a dealer.
+  const businessType = businessTypeOf(d as { businessType?: BusinessType })
+  const mechanic = (d.mechanic ?? {}) as { specialties?: unknown; photos?: unknown }
+  const identity = (d.identity ?? null) as Record<string, unknown> | null
+
   return {
     id,
+    businessType,
+    services: Array.isArray(mechanic.specialties)
+      ? (mechanic.specialties as string[])
+          .map((sid) => SPECIALTY_LABELS.get(sid))
+          .filter((l): l is string => Boolean(l))
+      : [],
+    photoCount: Array.isArray(mechanic.photos) ? mechanic.photos.length : 0,
+    // Only mechanics have one, and only mechanics are gated on it.
+    identity:
+      businessType === 'mechanic' && identity
+        ? {
+            status: (identity.status as IdentityStatus) ?? 'unverified',
+            verifiedName: (identity.verifiedName as string) ?? null,
+            nameMatch: (identity.nameMatch as boolean) ?? null,
+            bvnLast4: (identity.bvnLast4 as string) ?? null,
+            ninLast4: (identity.ninLast4 as string) ?? null,
+            verifiedAt: formatSubmitted(identity.verifiedAt),
+            attempts: Number(identity.attempts ?? 0),
+            reverificationRequired: Boolean(identity.reverificationRequiredAt),
+          }
+        : null,
     name: (d.businessName as string) || '(no name)',
     owner: (d.ownerName as string) ?? '—',
     cac: (d.cacNumber as string) ?? '—',

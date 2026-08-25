@@ -39,6 +39,9 @@ class StoreService {
     String email = '',
     String landmark = '',
     String automotiveCategory = '',
+    BusinessType businessType = BusinessType.partsDealer,
+    List<String> specialties = const [],
+    List<String> photos = const [],
   }) async {
     final callable = _functions.httpsCallable('registerStore');
     final result = await callable.call<Map<String, dynamic>>({
@@ -58,6 +61,14 @@ class StoreService {
       'landmark': landmark,
       'automotiveCategory': automotiveCategory,
       'acceptedTerms': true,
+      // Omitted entirely for a dealer rather than sent as 'parts_dealer'.
+      // The callable defaults to a dealer when the field is absent, which is
+      // what keeps an older installed build registering exactly as it does
+      // today — so the dealer payload stays byte-identical to before.
+      if (businessType == BusinessType.mechanic) ...{
+        'businessType': businessType.wire,
+        'mechanic': {'specialties': specialties, 'photos': photos},
+      },
     });
     final data = result.data;
     return (storeId: data['storeId'] as String, slug: data['slug'] as String);

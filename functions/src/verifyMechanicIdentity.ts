@@ -235,10 +235,15 @@ async function runCheck(
       // Not a failure of this person's identity, and it must never be recorded
       // as one: no attempt is counted, and the status stays as it was rather
       // than moving to 'failed'.
+      // Provably never attempted: resolveProvider() throws before a provider
+      // object exists, so nothing was ever sent. This is the only class of
+      // failure where the stronger assurance below is true.
       fail(
         'unavailable',
         ERROR_CODE.IDENTITY_PROVIDER_UNAVAILABLE,
-        'Identity verification is not available yet. Your details have not been submitted.',
+        'Identity verification is temporarily unavailable and your details were not sent ' +
+          'to the verification provider. Your registration has been saved. Please try ' +
+          'again later.',
       );
     }
     throw error;
@@ -257,10 +262,15 @@ async function runCheck(
         endpoint: error.endpoint,
         detail: error.detail,
       });
+      // The request DID reach the provider — this error comes out of
+      // provider.check() — so the identifiers may already be on Dojah's side.
+      // Claiming they were not sent would be a privacy assurance we cannot
+      // stand behind. All we can honestly say is that we do not keep them.
       fail(
         'internal',
         ERROR_CODE.IDENTITY_PROVIDER_UNAVAILABLE,
-        'Identity verification is temporarily unavailable. Your details have not been submitted.',
+        'Identity verification could not be completed right now. Your registration has ' +
+          'been saved, and we do not store your full BVN or NIN. Please try again later.',
       );
     }
 
@@ -323,7 +333,12 @@ async function runCheck(
   };
 }
 
-/** The keyring, or a refusal that is never mistaken for a failed identity. */
+/**
+ * The keyring, or a refusal that is never mistaken for a failed identity.
+ *
+ * Resolved first, before the duplicate check and long before the provider
+ * call, so a failure here provably sent nothing anywhere.
+ */
 function resolveKeyringOrFail() {
   try {
     return resolveKeyring();
@@ -331,7 +346,9 @@ function resolveKeyringOrFail() {
     fail(
       'unavailable',
       ERROR_CODE.IDENTITY_PROVIDER_UNAVAILABLE,
-      'Identity verification is not available yet. Your details have not been submitted.',
+      'Identity verification is temporarily unavailable and your details were not sent ' +
+        'to the verification provider. Your registration has been saved. Please try ' +
+        'again later.',
     );
     throw new Error('unreachable');
   }

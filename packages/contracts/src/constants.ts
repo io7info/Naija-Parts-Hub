@@ -128,6 +128,41 @@ export const MAX_WORKSHOP_PHOTOS = 10;
 /** A mechanic must advertise at least one service, or they are unfindable. */
 export const MIN_MECHANIC_SPECIALTIES = 1;
 
+// --- Feature flags ----------------------------------------------------------
+
+/**
+ * Runtime feature flags: `config/features`.
+ *
+ * Firestore rather than Remote Config, deliberately. The app already depends
+ * on Firestore and already reads it before registration, so this needs no new
+ * package, no new SDK to initialise and no extra network stack — which is what
+ * "the simplest production-safe mechanism" means here. Remote Config would be
+ * a dependency added for one boolean.
+ *
+ * Publicly readable (it holds no secrets and the signed-out registration
+ * screen needs it), admin-writable only.
+ *
+ * The point of it being remote: mechanic signup can be switched on once Dojah
+ * is live without shipping a new build through Play review.
+ */
+export const CONFIG_COLLECTION = 'config';
+export const FEATURES_DOC = 'features';
+
+export interface FeatureFlags {
+  /**
+   * Whether the app offers Auto Mechanic as a registration option.
+   *
+   * Off in production until identity verification actually works. Exposing a
+   * signup path that stops dead at an unavailable BVN/NIN check would be worse
+   * than not offering it: the mechanic completes a long form and is then told
+   * the platform cannot finish, with nothing to do about it.
+   *
+   * Absent means "use the build's own default" — enabled in debug, disabled in
+   * release — so a missing document can never accidentally switch it on.
+   */
+  mechanicSignupEnabled?: boolean;
+}
+
 /**
  * How closely the government record's name must match the submitted name.
  *

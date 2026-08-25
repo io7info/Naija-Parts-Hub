@@ -71,6 +71,40 @@ class ImageUploadService {
     );
   }
 
+  /// Uploads one mechanic workshop photograph.
+  ///
+  /// A sibling path of listings/, not a reuse of it: these are not inventory.
+  /// They carry no price, category or quantity, never enter parts search, and
+  /// are capped by MAX_WORKSHOP_PHOTOS on the profile rather than by a
+  /// subscription quota. Sharing the listings path would make a photo of a
+  /// workshop indistinguishable from a part for sale at the storage layer.
+  ///
+  /// `storeId` is the caller's auth uid, which exists before the store
+  /// document does — so a mechanic can add photos during registration, before
+  /// there is anything to attach them to. The storage rule checks the same
+  /// uid, so this is authorised at that point too.
+  Future<String> uploadWorkshopPhoto({
+    required String storeId,
+    required XFile source,
+    void Function(double progress)? onProgress,
+  }) async {
+    final compressed = await _compress(source);
+
+    final imageId = const Uuid().v4();
+    final ref = _storage.ref('stores/$storeId/workshop/$imageId.jpg');
+
+    final task = ref.putFile(compressed, SettableMetadata(contentType: 'image/jpeg'));
+
+    if (onProgress != null) {
+      task.snapshotEvents.listen((s) {
+        if (s.totalBytes > 0) onProgress(s.bytesTransferred / s.totalBytes);
+      });
+    }
+
+    final snapshot = await task;
+    return snapshot.ref.getDownloadURL();
+  }
+
   Future<File> _compress(XFile source) async {
     final dir = await getTemporaryDirectory();
     final target = '${dir.path}/${const Uuid().v4()}.jpg';

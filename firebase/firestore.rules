@@ -350,6 +350,23 @@ service cloud.firestore {
     }
 
     // ---------------------------------------------------------------------
+    // config/{doc} — runtime feature flags
+    //
+    // Public read: the registration screen consults `config/features` before
+    // a dealer or mechanic has signed in, so a rule requiring auth would make
+    // the flag unreadable exactly where it is needed.
+    //
+    // Holds no secrets — booleans deciding which signup options the app
+    // offers. Admin-only writes, because flipping one changes what the whole
+    // product does: mechanicSignupEnabled opens a registration path that only
+    // works once identity verification is live.
+    // ---------------------------------------------------------------------
+    match /config/{doc} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ---------------------------------------------------------------------
     // Backend-only collections
     //
     // Cloud Functions use the Admin SDK, which bypasses these rules entirely,
