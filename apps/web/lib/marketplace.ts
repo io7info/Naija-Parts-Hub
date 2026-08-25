@@ -59,6 +59,40 @@ export type Store = {
   about: string
 }
 
+/**
+ * A mechanic's public profile.
+ *
+ * A separate type from `Store` rather than optional fields on it, because the
+ * two share almost nothing a page actually renders. A mechanic has no
+ * inventory, no listing count, no categories derived from stock and no price;
+ * a dealer has no services and no workshop gallery. Merging them would give
+ * every storefront component a set of fields that are always empty, and would
+ * make it easy to render a mechanic through a dealer template — the one
+ * outcome the client explicitly ruled out.
+ *
+ * Deliberately carries no identity data. BVN and NIN, their last four digits,
+ * the fingerprints and the verified legal name are all absent: this object is
+ * serialised into public HTML.
+ */
+export type Mechanic = {
+  slug: string
+  name: string
+  /** City and state, for the location line. */
+  location: string
+  address: string
+  phone: string
+  whatsapp: string
+  state: string
+  /** Admin-approved. Mechanics also pass BVN/NIN identity verification. */
+  verified: boolean
+  memberSince: string
+  about: string
+  /** Display labels, resolved from MECHANIC_SPECIALTIES. */
+  services: string[]
+  /** Workshop and completed-work photographs, at most MAX_WORKSHOP_PHOTOS. */
+  photos: string[]
+}
+
 export const NAIRA = '₦'
 
 export function formatNaira(value: number): string {

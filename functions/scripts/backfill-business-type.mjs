@@ -105,23 +105,44 @@ console.log(`setting    ${FIELD} = "${VALUE}" where absent\n`);
 // whole reason this script exists, so the filtering happens here.
 const snap = await db.collection(COLLECTION).get();
 
+/** The only values this field may hold. Mirrors the BusinessType union. */
+const KNOWN = ['parts_dealer', 'mechanic'];
+
 const missing = [];
 const already = [];
+const unexpected = [];
+
 for (const doc of snap.docs) {
   const current = doc.get(FIELD);
   if (current === undefined || current === null || current === '') missing.push(doc);
-  else already.push([doc.id, current]);
+  else if (KNOWN.includes(current)) already.push([doc.id, current]);
+  // Anything else is a value no version of this code writes: a typo from a
+  // manual console edit, a partial run of a future migration, or corruption.
+  // Backfilling over it would destroy evidence, and skipping it silently would
+  // leave a store that matches no query and appears nowhere at all.
+  else unexpected.push([doc.id, current, doc.get('businessName')]);
 }
+
+const label = (doc) => (doc.get('businessName') || '(no name)').slice(0, 30).padEnd(32);
 
 console.log(`${snap.size} store(s) total`);
-console.log(`  ${already.length} already declare a type`);
+console.log(`  ${already.length} already declare a valid type`);
 for (const [id, type] of already) console.log(`      ${String(type).padEnd(13)} ${id}`);
 console.log(`  ${missing.length} need backfilling`);
-for (const doc of missing) {
-  console.log(`      ${(doc.get('businessName') || '(no name)').slice(0, 30).padEnd(32)} ${doc.id}`);
+for (const doc of missing) console.log(`      ${label(doc)} ${doc.id}`);
+
+if (unexpected.length > 0) {
+  console.log(`\n⚠ ${unexpected.length} store(s) hold an UNRECOGNISED ${FIELD}:`);
+  for (const [id, value, name] of unexpected) {
+    console.log(`      value=${JSON.stringify(value)}  ${String(name || '(no name)').slice(0, 30)}  ${id}`);
+  }
+  console.log(`  Expected one of: ${KNOWN.join(', ')}`);
+  console.log('  These are NOT touched by this script. They will also match no');
+  console.log('  business-type query, so they are invisible to the marketplace');
+  console.log('  until corrected by hand.');
 }
 
-if (missing.length === 0) {
+if (missing.length === 0 && unexpected.length === 0) {
   console.log('\nNothing to do.');
   process.exit(0);
 }
@@ -129,6 +150,21 @@ if (missing.length === 0) {
 if (!emulatorMode && !confirmed) {
   console.log('\nDry run — nothing written.');
   console.log('Re-run with --confirm-production to apply.');
+  process.exit(0);
+}
+
+// Refuse to apply while malformed data is present, unless explicitly waved
+// through. Unrecognised values mean an assumption is already wrong somewhere,
+// and writing more rows on top of that is how a small inconsistency becomes a
+// large one.
+if (unexpected.length > 0 && !process.argv.includes('--allow-unexpected')) {
+  console.error('\n✗ Refusing to write while unrecognised values exist.');
+  console.error('  Fix them, or re-run with --allow-unexpected to backfill the rest anyway.');
+  process.exit(1);
+}
+
+if (missing.length === 0) {
+  console.log('\nNothing to backfill.');
   process.exit(0);
 }
 

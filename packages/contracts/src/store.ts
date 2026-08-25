@@ -73,6 +73,17 @@ export interface IdentityVerification {
   bvnFingerprint: string | null;
   ninFingerprint: string | null;
 
+  /**
+   * Which key version produced those fingerprints.
+   *
+   * They cannot be recomputed — the identifier they came from is deliberately
+   * not stored — so a compromised key is handled by adding a new one to the
+   * ring and keeping the old one for lookups. This records which key applies
+   * to this record, so a rotation knows what still needs re-issuing the next
+   * time this mechanic verifies. See functions/src/lib/identity/fingerprint.ts.
+   */
+  fingerprintKeyVersion: number | null;
+
   /** Did the government record's name match what they submitted? */
   nameMatch: boolean | null;
   /** The provider's legal name. Admin-only; never public, never in a list view. */
@@ -82,6 +93,26 @@ export interface IdentityVerification {
   attempts: number;
   /** Set after repeated failures; blocks further attempts until it passes. */
   lockedUntil: Timestamp | null;
+
+  /**
+   * When the platform forced this record back into re-verification.
+   *
+   * Written by scripts/flag-compromised-identities.mjs after a fingerprint key
+   * is withdrawn. Distinguishes "we invalidated this" from "they failed a
+   * check", which matters to the administrator reading the queue and to the
+   * mechanic being asked to verify again through no fault of their own.
+   */
+  reverificationRequiredAt?: Timestamp | null;
+
+  /**
+   * Set while a verification is running, cleared when it finishes.
+   *
+   * Single-flight protection: two concurrent submissions contend on this
+   * document, so the second is refused before it can reach a billable
+   * endpoint. Expires on its own so a crashed invocation cannot strand the
+   * mechanic permanently.
+   */
+  inFlightUntil?: Timestamp | null;
 }
 
 export type SubscriptionPlan = 'free' | 'monthly' | 'yearly';

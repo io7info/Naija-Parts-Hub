@@ -5,9 +5,19 @@ import Link from 'next/link'
 import { Menu, X, Search } from 'lucide-react'
 import { Logo } from '@/components/brand/logo'
 
+/**
+ * Parts, Dealers and Mechanics are three separate entries on purpose.
+ *
+ * The client's problem was that marketers and users could not tell who should
+ * register or what each account was for. Folding mechanics into "Dealers"
+ * would reproduce exactly that confusion in the navigation, where it is most
+ * visible — so the distinction the product makes is the distinction the menu
+ * makes.
+ */
 const links = [
   { href: '/parts', label: 'Browse Parts' },
-  { href: '/stores', label: 'Dealers' },
+  { href: '/stores', label: 'Parts Dealers' },
+  { href: '/mechanics', label: 'Mechanics' },
   { href: '/about', label: 'How it works' },
   { href: '/plans', label: 'Sell on NPH' },
 ]

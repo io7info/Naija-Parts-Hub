@@ -15,21 +15,51 @@ const read = (p: string) => readFileSync(join(REPO_ROOT, p), 'utf8')
  * dealer directory with zero listings and a storefront selling nothing — a
  * bug a passing test suite would never notice and a buyer would.
  */
-describe('public store queries are filtered to parts dealers', () => {
+describe('public store queries are filtered by business type', () => {
   const source = read('apps/web/lib/repositories/marketplace.ts')
+  const DEALERS = 'function publicDealers'
+  const MECHANICS = 'function publicMechanics'
 
-  it('every stores query goes through the guarded helper', () => {
-    // One occurrence, inside publicDealers(). A second means someone has
-    // hand-rolled a query that can skip the businessType filter.
+  it('stores is queried only from the two guarded helpers', () => {
+    // Exactly two: publicDealers and publicMechanics. A third means someone
+    // has hand-rolled a query that can skip the business-type filter, and the
+    // symptom would be mechanics listed as dealers rather than an error.
     const queries = source.match(/\.collection\('stores'\)/g) ?? []
-    expect(queries.length).toBe(1)
+    expect(queries.length).toBe(2)
+
+    for (const helper of [DEALERS, MECHANICS]) {
+      const body = source.slice(source.indexOf(helper), source.indexOf(helper) + 400)
+      expect(body, `${helper} must own its query`).toContain(".collection('stores')")
+    }
   })
 
-  it('the helper applies all three predicates', () => {
-    const helper = source.slice(source.indexOf('function publicDealers'))
-    expect(helper).toContain("'status', '==', 'approved'")
-    expect(helper).toContain("'visible', '==', true")
-    expect(helper).toContain("'businessType', '==', 'parts_dealer'")
+  it('each helper pins its own business type', () => {
+    // Two helpers rather than one taking a parameter, deliberately: a caller
+    // passing the wrong argument would render mechanics through a dealer
+    // surface, which is exactly what the client ruled out.
+    const dealers = source.slice(source.indexOf(DEALERS), source.indexOf(DEALERS) + 400)
+    expect(dealers).toContain("'status', '==', 'approved'")
+    expect(dealers).toContain("'visible', '==', true")
+    expect(dealers).toContain("'businessType', '==', 'parts_dealer'")
+
+    const mechanics = source.slice(source.indexOf(MECHANICS), source.indexOf(MECHANICS) + 400)
+    expect(mechanics).toContain("'status', '==', 'approved'")
+    expect(mechanics).toContain("'visible', '==', true")
+    expect(mechanics).toContain("'businessType', '==', 'mechanic'")
+  })
+
+  it('the mechanic projection never reads the identity block', () => {
+    // toMechanic is serialised into public HTML. Last-four digits,
+    // fingerprints and the verified legal name are admin-only, and the surest
+    // way to keep them out is for this function not to mention them.
+    const projection = source.slice(
+      source.indexOf('function toMechanic'),
+      source.indexOf('export type MechanicQuery'),
+    )
+    expect(projection.length).toBeGreaterThan(0)
+    for (const field of ['identity', 'bvn', 'nin', 'Fingerprint', 'verifiedName', 'cacNumber']) {
+      expect(projection, `toMechanic exposes ${field}`).not.toContain(field)
+    }
   })
 })
 

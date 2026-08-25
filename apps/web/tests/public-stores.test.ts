@@ -102,8 +102,13 @@ describe('only approved, visible stores are public', () => {
       expect(window, 'a stores query without the visibility filter').toContain(
         "where('visible', '==', true)",
       )
-      expect(window, 'a stores query that would expose mechanics as dealers').toContain(
-        "where('businessType', '==', 'parts_dealer')",
+      // Either type, but never neither. `stores` now holds both parts dealers
+      // and auto mechanics, and a query with no business-type clause returns a
+      // mix — mechanics in the dealer directory, or dealers listed as
+      // workshops. Which type is asserted per-helper in business-type.test.ts;
+      // what matters here is that no query omits the distinction entirely.
+      expect(window, 'a stores query with no business-type filter').toMatch(
+        /where\('businessType', '==', '(parts_dealer|mechanic)'\)/,
       )
     }
   })

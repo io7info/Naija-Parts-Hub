@@ -1,6 +1,8 @@
 import 'server-only'
 
-import { koboToNaira, type Condition, type Product, type Store } from '../marketplace'
+import { MECHANIC_SPECIALTIES } from '@nph/contracts'
+
+import { koboToNaira, type Condition, type Mechanic, type Product, type Store } from '../marketplace'
 import { getAdminDb } from '../firebase-admin'
 
 /**
@@ -298,4 +300,106 @@ export async function listPublicListingIds(): Promise<string[]> {
     .limit(200)
     .get()
   return snapshot.docs.map((doc) => doc.id)
+}
+
+// --- Auto mechanics ---------------------------------------------------------
+
+/**
+ * The public-mechanic predicate, in one place.
+ *
+ * The mirror of `publicDealers`, and separate from it on purpose: the two must
+ * never be one function with a parameter, because a caller passing the wrong
+ * argument would render mechanics through a dealer surface. Two names that
+ * cannot be confused is worth more here than the duplication saved.
+ */
+function publicMechanics(db: FirebaseFirestore.Firestore) {
+  return db
+    .collection('stores')
+    .where('status', '==', 'approved')
+    .where('visible', '==', true)
+    .where('businessType', '==', 'mechanic')
+}
+
+/** Specialty ids are stored; labels are display. Unknown ids are dropped. */
+const SPECIALTY_LABELS: ReadonlyMap<string, string> = new Map<string, string>(
+  MECHANIC_SPECIALTIES.map((s) => [s.id, s.label]),
+)
+
+/**
+ * Projects a mechanic for public rendering.
+ *
+ * The identity block is not read at all. Its last-four digits, fingerprints and
+ * verified legal name exist for administrators and must never travel into
+ * public HTML — and the surest way to guarantee that is for this function not
+ * to know they exist.
+ */
+function toMechanic(d: Doc): Mechanic {
+  const city = (d.city as string) ?? ''
+  const state = (d.state as string) ?? ''
+  const created = toDate(d.approvedAt ?? d.createdAt)
+  const mechanic = (d.mechanic ?? {}) as { specialties?: unknown; photos?: unknown }
+
+  const services = Array.isArray(mechanic.specialties)
+    ? (mechanic.specialties as string[]).map((id) => SPECIALTY_LABELS.get(id)).filter((l): l is string => Boolean(l))
+    : []
+
+  return {
+    slug: (d.slug as string) ?? '',
+    name: (d.businessName as string) ?? '',
+    location: [city, state].filter(Boolean).join(', ') || 'Nigeria',
+    address: (d.address as string) ?? '',
+    phone: (d.phone as string) ?? '',
+    whatsapp: (d.whatsapp as string) ?? '',
+    state,
+    verified: true,
+    memberSince: created ? MONTH_YEAR.format(created) : '—',
+    about: (d.description as string) ?? '',
+    services,
+    photos: Array.isArray(mechanic.photos) ? (mechanic.photos as string[]).filter(Boolean) : [],
+  }
+}
+
+export type MechanicQuery = {
+  /** A specialty id from MECHANIC_SPECIALTIES. */
+  service?: string
+  state?: string
+  limit?: number
+}
+
+/** Approved, visible mechanics for the directory. */
+export async function listPublicMechanics(q: MechanicQuery = {}): Promise<Mechanic[]> {
+  let query = publicMechanics(getAdminDb())
+
+  if (q.state) query = query.where('state', '==', q.state)
+  // array-contains on the stored ids, so a mechanic offering several services
+  // is found by any of them.
+  if (q.service) query = query.where('mechanic.specialties', 'array-contains', q.service)
+
+  const snapshot = await query.limit(q.limit ?? 60).get()
+
+  return snapshot.docs
+    .map((doc) => toMechanic(doc.data()))
+    .filter((m) => m.slug)
+    // Most services advertised first: a fuller profile is more useful to a
+    // buyer than an emptier one, and there is no listing count to rank on.
+    .sort((a, b) => b.services.length - a.services.length)
+}
+
+/** One mechanic profile by slug. */
+export async function getPublicMechanic(slug: string): Promise<Mechanic | null> {
+  const snapshot = await publicMechanics(getAdminDb()).where('slug', '==', slug).limit(1).get()
+  const doc = snapshot.docs[0]
+  return doc ? toMechanic(doc.data()) : null
+}
+
+/** Slugs for generateStaticParams. Empty is valid — a new project has none. */
+export async function listPublicMechanicSlugs(): Promise<string[]> {
+  const mechanics = await listPublicMechanics({ limit: 200 })
+  return mechanics.map((m) => m.slug)
+}
+
+/** States with at least one approved mechanic, for the directory filter. */
+export async function listMechanicStates(): Promise<string[]> {
+  const snapshot = await publicMechanics(getAdminDb()).select('state').get()
+  return [...new Set(snapshot.docs.map((d) => d.get('state') as string).filter(Boolean))].sort()
 }
