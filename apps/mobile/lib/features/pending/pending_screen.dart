@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/env.dart';
 import '../../design/components.dart';
 import '../../design/tokens.dart';
 import '../../models/store.dart';
 import '../../services/auth_service.dart';
+import '../../services/identity_service.dart';
+import '../registration/mechanic_identity_screen.dart';
 import '../store/store_profile_screen.dart';
 
 /// SOW §3: "New businesses will remain pending until approved."
@@ -26,7 +29,11 @@ class PendingScreen extends ConsumerWidget {
   Future<void> _contactSupport() async {
     // wa.me rather than a tel: link — support is a WhatsApp line, and the same
     // handoff the marketplace uses for buyer-to-dealer contact.
-    final uri = Uri.parse('https://wa.me/2348031234567?text=${Uri.encodeComponent(
+    // Env.supportWhatsapp, not a literal. This screen hardcoded the
+    // placeholder while every other screen read the constant, so setting
+    // --dart-define=SUPPORT_WHATSAPP would have fixed support everywhere
+    // except here — the one screen a business waiting on approval uses.
+    final uri = Uri.parse('https://wa.me/${Env.supportWhatsapp}?text=${Uri.encodeComponent(
       'Hello Naija Parts Hub, I need help with my store registration (${store.businessName}).',
     )}');
     if (await canLaunchUrl(uri)) {
@@ -39,6 +46,13 @@ class PendingScreen extends ConsumerWidget {
     final rejected = store.status == StoreStatus.rejected;
     final suspended = store.status == StoreStatus.suspended;
     final blocked = rejected || suspended;
+
+    // Dealers never satisfy this — they carry no identity block at all, and
+    // the client was explicit that BVN and NIN are not part of their flow.
+    // Suspended and rejected stores are excluded too: verifying would not
+    // change either outcome, and offering it would imply otherwise.
+    final needsIdentity =
+        store.status == StoreStatus.pending && needsIdentityVerification(store);
 
     return Scaffold(
       backgroundColor: NphColors.background,
@@ -94,7 +108,17 @@ class PendingScreen extends ConsumerWidget {
                     const SizedBox(height: NphSpacing.xxxl),
                     NphTimeline(steps: _timeline(store.status)),
                     const SizedBox(height: NphSpacing.xxl),
-                    if (store.status == StoreStatus.pending)
+                    // A mechanic who has not verified is not waiting on us —
+                    // we are waiting on them, and the timeline above would
+                    // otherwise tell them the opposite.
+                    if (needsIdentity)
+                      const NphBanner(
+                        message: 'Your identity has not been verified yet. '
+                            'Your workshop cannot be approved until it is.',
+                        tone: NphTone.warning,
+                        icon: Icons.badge_outlined,
+                      )
+                    else if (store.status == StoreStatus.pending)
                       const NphBanner(
                         message: 'Reviews usually finish within one business day. '
                             'You can keep this app closed — we will notify you.',
@@ -115,6 +139,28 @@ class PendingScreen extends ConsumerWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // THE WAY BACK TO VERIFICATION.
+                  //
+                  // Without this the flow is a trap. Identity verification is
+                  // reached by pushReplacement straight after registration, and
+                  // nowhere else: the other entry point lives on the mechanic's
+                  // own profile, inside MechanicShell, which the gate only
+                  // reaches once the store is approved — and approval requires
+                  // the very verification being sought. A mechanic who closed
+                  // the app on that screen, or whose check could not run,
+                  // landed here permanently: pending forever, unable to verify,
+                  // impossible to approve.
+                  if (needsIdentity) ...[
+                    FilledButton(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const MechanicIdentityScreen(),
+                        ),
+                      ),
+                      child: const Text('Verify my identity'),
+                    ),
+                    const SizedBox(height: NphSpacing.md),
+                  ],
                   FilledButton(
                     onPressed: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(

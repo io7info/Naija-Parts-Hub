@@ -1,6 +1,8 @@
 import 'server-only'
 
-import { koboToNaira, type Condition, type Product, type Store } from '../marketplace'
+import { MECHANIC_SPECIALTIES, businessTypeOf } from '@nph/contracts'
+
+import { koboToNaira, type Condition, type Mechanic, type Product, type Store } from '../marketplace'
 import { getAdminDb } from '../firebase-admin'
 
 /**
@@ -208,16 +210,56 @@ export async function getPublicListing(listingId: string): Promise<Product | nul
   return toProduct(doc.id, data)
 }
 
+/**
+ * The public-store predicate, in one place.
+ *
+ * Every public query over `stores` must carry all three clauses. The first two
+ * mirror the security rule; the third keeps auto mechanics out of surfaces
+ * built for parts dealers — the dealer directory, the storefront route, and
+ * the state filter derived from them.
+ *
+ * A missed filter here does not fail loudly: a mechanic simply appears as a
+ * dealer, with an inventory count of zero and a storefront selling nothing.
+ * tests/marketplace.test.ts asserts every `collection('stores')` query in this
+ * file applies it.
+ *
+ * WHY THE TYPE IS NOT IN THE QUERY
+ *
+ * `.where('businessType', '==', 'parts_dealer')` looks like the obvious way to
+ * write this and is a trap. Firestore does not match documents that lack the
+ * field, and EVERY store registered before the mechanic intake lacks it — so
+ * that clause returned nothing at all for the entire existing dealer base.
+ * Deployed, it would have 404'd every real dealer's storefront and emptied the
+ * directory, silently, with no error anywhere.
+ *
+ * The backfill (functions/scripts/backfill-business-type.mjs) was meant to run
+ * first and would have masked it. But a migration that has not been run is a
+ * normal state of the world, and the consequence here is the whole marketplace
+ * disappearing. So the rule lives in code, where `businessTypeOf` applies the
+ * contract's reading — absent means parts dealer — and the result is the same
+ * whether the backfill has run or not.
+ *
+ * Mechanics need no such care: registerStore has always written their
+ * businessType, so none can exist without it.
+ */
+function publicStores(db: FirebaseFirestore.Firestore) {
+  return db.collection('stores').where('status', '==', 'approved').where('visible', '==', true)
+}
+
+/** Applies the contract's rule to a raw store document. */
+function isDealerDoc(data: FirebaseFirestore.DocumentData): boolean {
+  return businessTypeOf(data as Parameters<typeof businessTypeOf>[0]) === 'parts_dealer'
+}
+
 /** Approved, visible stores for the directory. */
 export async function listPublicStores(limit = 60): Promise<Store[]> {
-  const snapshot = await getAdminDb()
-    .collection('stores')
-    .where('status', '==', 'approved')
-    .where('visible', '==', true)
-    .limit(limit)
-    .get()
+  // Fetched before the type is applied, so the limit is a read bound rather
+  // than a dealer count. Store totals are in the tens; if that stops being
+  // true this wants a paginated read, not a bigger number.
+  const snapshot = await publicStores(getAdminDb()).limit(limit).get()
 
   return snapshot.docs
+    .filter((doc) => isDealerDoc(doc.data()))
     .map((doc) => toStore(doc.data()))
     .filter((store) => store.slug)
     .sort((a, b) => b.activeListings - a.activeListings)
@@ -234,19 +276,17 @@ export async function listPublicStores(limit = 60): Promise<Store[]> {
 export async function getPublicStore(
   slug: string,
 ): Promise<{ store: Store; products: Product[] } | null> {
-  const snapshot = await getAdminDb()
-    .collection('stores')
-    .where('slug', '==', slug)
-    .where('status', '==', 'approved')
-    .where('visible', '==', true)
-    .limit(1)
-    .get()
+  const snapshot = await publicStores(getAdminDb()).where('slug', '==', slug).limit(1).get()
 
   if (snapshot.empty) return null
 
   // By id, not slug: `publiclyVisible + storeId + createdAt` is indexed and
   // `storeSlug` is not, and the ordered query needs an index to run at all.
   const doc = snapshot.docs[0]!
+  // A mechanic reaching the dealer storefront would render as a shop with no
+  // inventory. Slugs are unique across both types, so this is the type guard
+  // the query no longer carries.
+  if (!isDealerDoc(doc.data())) return null
   const { products } = await listPublicListings({ storeId: doc.id, limit: 120 })
   const categories = [...new Set(products.map((l) => l.category).filter(Boolean))]
 
@@ -266,14 +306,19 @@ export async function getPublicStore(
  * store's state is the same state the listings denormalize onto themselves.
  */
 export async function listMarketplaceStates(): Promise<string[]> {
-  const snapshot = await getAdminDb()
-    .collection('stores')
-    .where('status', '==', 'approved')
-    .where('visible', '==', true)
-    .select('state')
-    .get()
+  // businessType is selected alongside state so the dealer rule can be applied
+  // to the projection — `select('state')` alone would hide the field the
+  // filter needs and quietly include mechanics' states.
+  const snapshot = await publicStores(getAdminDb()).select('state', 'businessType').get()
 
-  return [...new Set(snapshot.docs.map((d) => d.get('state') as string).filter(Boolean))].sort()
+  return [
+    ...new Set(
+      snapshot.docs
+        .filter((d) => isDealerDoc(d.data()))
+        .map((d) => d.get('state') as string)
+        .filter(Boolean),
+    ),
+  ].sort()
 }
 
 /** Slugs for generateStaticParams. Empty is valid — a new project has no stores. */
@@ -289,4 +334,106 @@ export async function listPublicListingIds(): Promise<string[]> {
     .limit(200)
     .get()
   return snapshot.docs.map((doc) => doc.id)
+}
+
+// --- Auto mechanics ---------------------------------------------------------
+
+/**
+ * The public-mechanic predicate, in one place.
+ *
+ * The mirror of `publicDealers`, and separate from it on purpose: the two must
+ * never be one function with a parameter, because a caller passing the wrong
+ * argument would render mechanics through a dealer surface. Two names that
+ * cannot be confused is worth more here than the duplication saved.
+ */
+function publicMechanics(db: FirebaseFirestore.Firestore) {
+  return db
+    .collection('stores')
+    .where('status', '==', 'approved')
+    .where('visible', '==', true)
+    .where('businessType', '==', 'mechanic')
+}
+
+/** Specialty ids are stored; labels are display. Unknown ids are dropped. */
+const SPECIALTY_LABELS: ReadonlyMap<string, string> = new Map<string, string>(
+  MECHANIC_SPECIALTIES.map((s) => [s.id, s.label]),
+)
+
+/**
+ * Projects a mechanic for public rendering.
+ *
+ * The identity block is not read at all. Its last-four digits, fingerprints and
+ * verified legal name exist for administrators and must never travel into
+ * public HTML — and the surest way to guarantee that is for this function not
+ * to know they exist.
+ */
+function toMechanic(d: Doc): Mechanic {
+  const city = (d.city as string) ?? ''
+  const state = (d.state as string) ?? ''
+  const created = toDate(d.approvedAt ?? d.createdAt)
+  const mechanic = (d.mechanic ?? {}) as { specialties?: unknown; photos?: unknown }
+
+  const services = Array.isArray(mechanic.specialties)
+    ? (mechanic.specialties as string[]).map((id) => SPECIALTY_LABELS.get(id)).filter((l): l is string => Boolean(l))
+    : []
+
+  return {
+    slug: (d.slug as string) ?? '',
+    name: (d.businessName as string) ?? '',
+    location: [city, state].filter(Boolean).join(', ') || 'Nigeria',
+    address: (d.address as string) ?? '',
+    phone: (d.phone as string) ?? '',
+    whatsapp: (d.whatsapp as string) ?? '',
+    state,
+    verified: true,
+    memberSince: created ? MONTH_YEAR.format(created) : '—',
+    about: (d.description as string) ?? '',
+    services,
+    photos: Array.isArray(mechanic.photos) ? (mechanic.photos as string[]).filter(Boolean) : [],
+  }
+}
+
+export type MechanicQuery = {
+  /** A specialty id from MECHANIC_SPECIALTIES. */
+  service?: string
+  state?: string
+  limit?: number
+}
+
+/** Approved, visible mechanics for the directory. */
+export async function listPublicMechanics(q: MechanicQuery = {}): Promise<Mechanic[]> {
+  let query = publicMechanics(getAdminDb())
+
+  if (q.state) query = query.where('state', '==', q.state)
+  // array-contains on the stored ids, so a mechanic offering several services
+  // is found by any of them.
+  if (q.service) query = query.where('mechanic.specialties', 'array-contains', q.service)
+
+  const snapshot = await query.limit(q.limit ?? 60).get()
+
+  return snapshot.docs
+    .map((doc) => toMechanic(doc.data()))
+    .filter((m) => m.slug)
+    // Most services advertised first: a fuller profile is more useful to a
+    // buyer than an emptier one, and there is no listing count to rank on.
+    .sort((a, b) => b.services.length - a.services.length)
+}
+
+/** One mechanic profile by slug. */
+export async function getPublicMechanic(slug: string): Promise<Mechanic | null> {
+  const snapshot = await publicMechanics(getAdminDb()).where('slug', '==', slug).limit(1).get()
+  const doc = snapshot.docs[0]
+  return doc ? toMechanic(doc.data()) : null
+}
+
+/** Slugs for generateStaticParams. Empty is valid — a new project has none. */
+export async function listPublicMechanicSlugs(): Promise<string[]> {
+  const mechanics = await listPublicMechanics({ limit: 200 })
+  return mechanics.map((m) => m.slug)
+}
+
+/** States with at least one approved mechanic, for the directory filter. */
+export async function listMechanicStates(): Promise<string[]> {
+  const snapshot = await publicMechanics(getAdminDb()).select('state').get()
+  return [...new Set(snapshot.docs.map((d) => d.get('state') as string).filter(Boolean))].sort()
 }

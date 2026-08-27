@@ -12,10 +12,23 @@ import 'package:firebase_auth/firebase_auth.dart';
 /// governs presentation only.
 String friendlyError(Object error) {
   if (error is FirebaseFunctionsException) {
+    // Transport failures are handled BEFORE `message`, because for these the
+    // SDK has no server text to carry and fills `message` with the raw gRPC
+    // status name instead. Preferring the message put "DEADLINE_EXCEEDED" on
+    // screen where a dealer expected a sentence.
+    switch (error.code) {
+      case 'deadline-exceeded':
+      case 'unavailable':
+      case 'cancelled':
+        return 'Could not reach the server. Check your connection and try again.';
+    }
+
     // Server-side validation and business rules arrive here. `message` is the
     // text the callable chose deliberately; the code is plumbing.
     final message = error.message?.trim();
-    if (message != null && message.isNotEmpty) return _tidy(message);
+    if (message != null && message.isNotEmpty && !_looksMachineGenerated(message)) {
+      return _tidy(message);
+    }
     return switch (error.code) {
       'unauthenticated' => 'Please sign in again.',
       'permission-denied' => 'You do not have permission to do that.',
@@ -99,6 +112,27 @@ String? _unreachableBackend(String? message) {
 
   return 'Could not reach the server. Check your connection and try again.';
 }
+
+/// Whether this failure means the account already has a store.
+///
+/// Worth telling apart from other refusals. It is exactly what a registration
+/// that succeeded on the server but timed out on the way back looks like when
+/// the user presses the button again — the work is done, and reporting it as a
+/// failure would strand someone behind a completed form.
+bool isAlreadyRegistered(Object error) {
+  if (error is! FirebaseFunctionsException) return false;
+  if (error.code == 'already-exists') return true;
+  final details = error.details;
+  return details is Map && details['code'] == 'ALREADY_REGISTERED';
+}
+
+/// Whether a message is a machine token rather than something written for a
+/// person — `DEADLINE_EXCEEDED`, `UNAVAILABLE`, `INTERNAL_ERROR`.
+///
+/// A backstop for the codes not enumerated above. Every message this project
+/// writes deliberately is a sentence, so nothing legitimate is caught by it.
+bool _looksMachineGenerated(String message) =>
+    RegExp(r'^[A-Z][A-Z0-9_]{2,}$').hasMatch(message);
 
 /// Strips stack frames and SDK prefixes from a message.
 String _tidy(String raw) {

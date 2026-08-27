@@ -96,6 +96,112 @@ class Subscription {
       );
 }
 
+/// Which intake a business registered through.
+///
+/// Dealers sell parts; mechanics advertise services. They share a document
+/// shape and an approval lifecycle and almost nothing else, so the app routes
+/// on this from the moment the store loads.
+///
+/// Mirrors BusinessType in packages/contracts/src/store.ts.
+enum BusinessType {
+  partsDealer,
+  mechanic;
+
+  /// Absent means parts dealer.
+  ///
+  /// Every store registered before mechanics existed carries no such field.
+  /// Anything unrecognised also resolves here: a value written by a newer
+  /// build must not crash an older app, and dealer is the safe reading —
+  /// it grants nothing a mechanic would not already have.
+  static BusinessType parse(String? raw) =>
+      raw == 'mechanic' ? BusinessType.mechanic : BusinessType.partsDealer;
+
+  String get wire => this == BusinessType.mechanic ? 'mechanic' : 'parts_dealer';
+}
+
+/// Where a mechanic's BVN/NIN check stands.
+///
+/// Mirrors IdentityStatus in the contracts. `manualReview` exists because a
+/// name that disagrees with the government record is not automatically fraud —
+/// marriages, dropped middle names and NIMC typos all land there — so a human
+/// decides rather than a threshold.
+enum IdentityStatus {
+  unverified,
+  pending,
+  verified,
+  failed,
+  manualReview;
+
+  static IdentityStatus parse(String? raw) => switch (raw) {
+        'verified' => IdentityStatus.verified,
+        'pending' => IdentityStatus.pending,
+        'failed' => IdentityStatus.failed,
+        'manual_review' => IdentityStatus.manualReview,
+        _ => IdentityStatus.unverified,
+      };
+}
+
+/// The retained result of an identity check — never the identifiers.
+///
+/// The app sees only what the backend stored: a status, the last four digits
+/// so a mechanic recognises which number they used, and whether the government
+/// name matched. BVN and NIN themselves exist for one provider call inside one
+/// Cloud Function and are never written anywhere.
+class IdentityVerification {
+  const IdentityVerification({
+    required this.status,
+    this.bvnLast4,
+    this.ninLast4,
+    this.nameMatch,
+    this.attempts = 0,
+    this.reverificationRequired = false,
+  });
+
+  final IdentityStatus status;
+  final String? bvnLast4;
+  final String? ninLast4;
+  final bool? nameMatch;
+  final int attempts;
+
+  /// Set when a withdrawn fingerprint key forced re-verification. Worth
+  /// distinguishing in the UI: this is a platform action, not their failure.
+  final bool reverificationRequired;
+
+  bool get isVerified => status == IdentityStatus.verified;
+
+  static IdentityVerification? fromMap(Map<String, dynamic>? m) {
+    if (m == null) return null;
+    return IdentityVerification(
+      status: IdentityStatus.parse(m['status'] as String?),
+      bvnLast4: m['bvnLast4'] as String?,
+      ninLast4: m['ninLast4'] as String?,
+      nameMatch: m['nameMatch'] as bool?,
+      attempts: (m['attempts'] as num?)?.toInt() ?? 0,
+      reverificationRequired: m['reverificationRequiredAt'] != null,
+    );
+  }
+}
+
+/// A mechanic's services and workshop photographs.
+///
+/// Not listings. A listing carries a price, a category and a quantity, counts
+/// against a subscription quota and appears in parts search; a photograph of a
+/// workshop has none of those properties.
+class MechanicProfile {
+  const MechanicProfile({this.specialties = const [], this.photos = const []});
+
+  final List<String> specialties;
+  final List<String> photos;
+
+  static MechanicProfile fromMap(Map<String, dynamic>? m) {
+    if (m == null) return const MechanicProfile();
+    return MechanicProfile(
+      specialties: (m['specialties'] as List?)?.whereType<String>().toList() ?? const [],
+      photos: (m['photos'] as List?)?.whereType<String>().toList() ?? const [],
+    );
+  }
+}
+
 class Store {
   const Store({
     required this.storeId,
@@ -117,6 +223,9 @@ class Store {
     this.landmark = '',
     this.automotiveCategory = '',
     this.rejectionReason,
+    this.businessType = BusinessType.partsDealer,
+    this.mechanic,
+    this.identity,
   });
 
   final String storeId;
@@ -144,6 +253,24 @@ class Store {
   final int activeListingCount;
   final Subscription subscription;
   final String? rejectionReason;
+
+  /// Which intake this business came through. Backend-controlled and set once
+  /// at registration; the app never writes it.
+  final BusinessType businessType;
+
+  /// Present only for mechanics.
+  final MechanicProfile? mechanic;
+
+  /// Present only for mechanics. Backend-written; read-only here.
+  final IdentityVerification? identity;
+
+  bool get isMechanic => businessType == BusinessType.mechanic;
+  bool get isPartsDealer => businessType == BusinessType.partsDealer;
+
+  /// Whether this mechanic has cleared BVN and NIN checks.
+  ///
+  /// False for a dealer, who has no identity block and is never gated on one.
+  bool get identityVerified => identity?.isVerified ?? false;
 
   /// Mirrors activeLimitFor() in functions/src/publishListing.ts.
   /// Display only — the authoritative check happens in the transaction.
@@ -173,6 +300,13 @@ class Store {
       activeListingCount: (d['activeListingCount'] as num?)?.toInt() ?? 0,
       subscription: Subscription.fromMap(d['subscription'] as Map<String, dynamic>?),
       rejectionReason: d['rejectionReason'] as String?,
+      businessType: BusinessType.parse(d['businessType'] as String?),
+      mechanic: d['mechanic'] == null
+          ? null
+          : MechanicProfile.fromMap((d['mechanic'] as Map).cast<String, dynamic>()),
+      identity: d['identity'] == null
+          ? null
+          : IdentityVerification.fromMap((d['identity'] as Map).cast<String, dynamic>()),
     );
   }
 }

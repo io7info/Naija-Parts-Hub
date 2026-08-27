@@ -28,6 +28,26 @@ export const STORE_BACKEND_FIELDS = [
   'createdAt',
   'approvedAt',
   'reviewedBy',
+
+  /**
+   * Set once by registerStore and never client-writable afterwards.
+   *
+   * If a mechanic could rewrite this to 'parts_dealer' they would land in the
+   * dealer marketplace with a listing quota and no CAC number; if a dealer
+   * could rewrite it to 'mechanic' they would leave the parts search their
+   * subscription pays for. It decides which rules, which quota and which
+   * public surface apply, so it belongs with approval and visibility.
+   */
+  'businessType',
+
+  /**
+   * The identity check result. Written only by the verification callable.
+   *
+   * Client-writable would defeat the entire point: a mechanic could set
+   * `status: 'verified'` and skip the check the client is paying a provider to
+   * perform. Readable by the owner and admins, never public.
+   */
+  'identity',
 ] as const;
 
 /** Fields on `stores/{storeId}` a dealer submits and may edit. SOW §2. */
@@ -47,6 +67,21 @@ export const STORE_DEALER_FIELDS = [
   'landmark',
   'automotiveCategory',
   'updatedAt',
+
+  /**
+   * The mechanic's own profile: specialties and workshop photographs.
+   *
+   * Editable by the owner, like every other field they typed. The rules cap
+   * the array lengths, because an unbounded write here is a way to grow one
+   * document without limit — but the contents are theirs.
+   *
+   * Present in this list for dealers too. A dealer writing `mechanic` gains
+   * nothing: no dealer surface reads it, and `businessType` — which decides
+   * whether anything reads it — is backend-controlled and immutable. Making
+   * the allowlist conditional on type would mean two shapes of the same rule,
+   * and rules are the file where complexity turns into holes.
+   */
+  'mechanic',
 ] as const;
 
 /** Fields on `listings/{listingId}` a dealer may never create or modify. */

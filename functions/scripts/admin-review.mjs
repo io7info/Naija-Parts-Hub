@@ -119,6 +119,35 @@ async function review() {
   }
 
   const before = snap.data();
+
+  /**
+   * The same identity gate adminReviewStore enforces.
+   *
+   * This script writes with the Admin SDK, so security rules do not apply and
+   * the callable is never consulted — which meant it could approve a mechanic
+   * whose BVN and NIN had never been checked, and `--allow-production` made
+   * that reachable against the live project. The result would be a Verified
+   * badge shown to buyers handing over their vehicles, produced by a tool
+   * whose whole purpose is to mirror the callable.
+   *
+   * Only approve and reactivate are gated, matching the callable exactly:
+   * rejecting or suspending an unverified mechanic must stay possible, or an
+   * unverifiable application could never be cleared.
+   *
+   * Dealers never enter this branch — they carry no identity block, and the
+   * client was explicit that BVN and NIN are not part of their flow.
+   */
+  const approving = action === 'approve' || action === 'reactivate';
+  const isMechanic = before.businessType === 'mechanic';
+  if (approving && isMechanic && before.identity?.status !== 'verified') {
+    console.error(`✗ ${before.businessName || storeId} is a mechanic whose identity is`);
+    console.error(`  "${before.identity?.status ?? 'missing'}", not "verified".`);
+    console.error('  Approval is blocked until BVN and NIN verification succeeds.');
+    console.error('  This is the same refusal adminReviewStore gives, and it is');
+    console.error('  deliberate — there is no flag to override it.');
+    process.exit(1);
+  }
+
   const now = Timestamp.now();
 
   await ref.update({

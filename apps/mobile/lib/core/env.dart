@@ -60,6 +60,24 @@ abstract final class Env {
   /// and Firestore tolerate a malformed key; Cloud Functions does not.
   static const String demoApiKey = 'AIzaSyDemoEmulatorKeyNotRealNotUsed1234';
 
+  /// Whether this build offers Auto Mechanic registration by default.
+  ///
+  /// `!kReleaseMode`, so debug and profile builds get the full mechanic flow
+  /// for testing while production ships dealer registration exactly as it is
+  /// today. A release build offering a signup path that cannot complete —
+  /// because BVN/NIN verification is not live yet — would take a mechanic
+  /// through a long form and then tell them the platform is not finished.
+  ///
+  /// This is only the DEFAULT. `config/features.mechanicSignupEnabled` in
+  /// Firestore overrides it either way, so the flag can be turned on in
+  /// production once Dojah is operational without shipping a new build through
+  /// Play review. See featureFlagsProvider.
+  ///
+  /// `--dart-define=MECHANIC_SIGNUP=true` forces it on locally, which is how a
+  /// release-mode build can be tested before the remote flag exists.
+  static const bool mechanicSignupDefault =
+      bool.fromEnvironment('MECHANIC_SIGNUP', defaultValue: !kReleaseMode);
+
   /// Placeholder app id for emulator runs — platform-dependent, unavoidably.
   ///
   /// FirebaseCore parses this string rather than treating it as opaque.

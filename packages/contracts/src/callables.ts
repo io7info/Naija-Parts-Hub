@@ -1,4 +1,4 @@
-import type { StoreProfileInput, SubscriptionPlan } from './store';
+import type { BusinessType, StoreProfileInput, SubscriptionPlan } from './store';
 
 /**
  * Callable Cloud Function signatures — the API surface shared by the Flutter
@@ -18,6 +18,7 @@ export const CALLABLE = {
   initializePayment: 'initializePayment',
   verifyPayment: 'verifyPayment',
   deleteAccount: 'deleteAccount',
+  verifyMechanicIdentity: 'verifyMechanicIdentity',
   // Admin-only (SOW §3, §9)
   adminReviewStore: 'adminReviewStore',
   adminModerateListing: 'adminModerateListing',
@@ -46,6 +47,26 @@ export const ERROR_CODE = {
   CATEGORY_EXISTS: 'CATEGORY_EXISTS',
   CATEGORY_IN_USE: 'CATEGORY_IN_USE',
   DOWNGRADE_NOT_SUPPORTED: 'DOWNGRADE_NOT_SUPPORTED',
+
+  // --- Mechanic identity verification ---------------------------------------
+  /** A mechanic cannot be approved until BVN and NIN are verified. */
+  IDENTITY_NOT_VERIFIED: 'IDENTITY_NOT_VERIFIED',
+  /** The provider rejected the identifier, or the names disagree materially. */
+  IDENTITY_CHECK_FAILED: 'IDENTITY_CHECK_FAILED',
+  /** Too many attempts. Each one costs a paid provider call. */
+  IDENTITY_ATTEMPTS_EXCEEDED: 'IDENTITY_ATTEMPTS_EXCEEDED',
+  /** These identifiers already belong to another mechanic account. */
+  IDENTITY_ALREADY_USED: 'IDENTITY_ALREADY_USED',
+  /**
+   * No verification provider is configured yet.
+   *
+   * A distinct code rather than a generic failure, because it means "the
+   * platform is not finished" rather than "your identity was rejected", and a
+   * mechanic must never be told the latter when the former is true.
+   */
+  IDENTITY_PROVIDER_UNAVAILABLE: 'IDENTITY_PROVIDER_UNAVAILABLE',
+  /** An action that only applies to one business type was called on the other. */
+  WRONG_BUSINESS_TYPE: 'WRONG_BUSINESS_TYPE',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODE)[keyof typeof ERROR_CODE];
@@ -57,6 +78,55 @@ export interface RegisterStoreRequest extends StoreProfileInput {
   acceptedTerms: true;
   /** Optional preferred slug; falls back to a slugified business name. */
   preferredSlug?: string;
+
+  /**
+   * Omitted means 'parts_dealer'.
+   *
+   * Deliberately optional so an older build of the app — one that predates
+   * mechanics and sends no such field — keeps registering dealers exactly as
+   * it does today. Requiring it would break every installed copy the moment
+   * this deploys.
+   */
+  businessType?: BusinessType;
+
+  /** Mechanics only; ignored when registering a parts dealer. */
+  mechanic?: {
+    specialties: string[];
+    photos?: string[];
+  };
+}
+
+// --- Mechanic: identity verification (BVN + NIN) -----------------------------
+
+/**
+ * The only path by which BVN and NIN enter the system.
+ *
+ * They travel from the app to this callable over HTTPS and no further: the
+ * function holds them as local variables, sends them to the provider, and
+ * keeps a keyed fingerprint plus the last four digits. They are never written
+ * to Firestore, never logged, never attached to analytics or a crash report,
+ * and never placed in a URL.
+ *
+ * Separate from registerStore so the identifiers are not carried along with a
+ * payload that gets persisted wholesale, and so verification can be retried
+ * without re-submitting a whole profile.
+ */
+export interface VerifyMechanicIdentityRequest {
+  /** 11 digits. Validated server-side before any paid provider call. */
+  bvn: string;
+  /** 11 digits. */
+  nin: string;
+  /** The legal name to match against the government record. */
+  fullName: string;
+}
+
+export interface VerifyMechanicIdentityResponse {
+  status: 'verified' | 'failed' | 'manual_review';
+  /** Present when the check completed; the provider's own reference. */
+  reference: string | null;
+  nameMatch: boolean | null;
+  /** Attempts remaining before the cooldown applies. */
+  attemptsRemaining: number;
 }
 
 export interface RegisterStoreResponse {

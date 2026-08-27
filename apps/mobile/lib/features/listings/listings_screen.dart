@@ -348,7 +348,17 @@ class _ListingsScreenState extends ConsumerState<ListingsScreen>
       message: '$used of $limit ${store.subscription.isPaid() ? '' : 'free '}listings used',
       tone: atLimit ? NphTone.warning : NphTone.brand,
       icon: atLimit ? Icons.warning_amber_rounded : Icons.inventory_2_outlined,
-      trailing: store.subscription.isPaid()
+      // Hidden on iOS, like every other route to a paid plan. App Store
+      // Guideline 3.1.1 covers "calls to action", not only external links, and
+      // a control labelled Upgrade is one — it stays a call to action even
+      // though this particular one opens PlanStatusScreen in-app rather than a
+      // browser. That screen already hides its own purchase button on iOS, so
+      // leaving this visible also left an iOS dealer tapping Upgrade and
+      // arriving somewhere with no way to upgrade, which reads as broken.
+      //
+      // The count beside it is untouched on both platforms: telling a dealer
+      // they are at 10 of 10 is a fact about their account, not a pitch.
+      trailing: (store.subscription.isPaid() || !Env.showUpgradeLinks)
           ? null
           : InkWell(
               onTap: () => Navigator.of(context).push(
@@ -621,7 +631,13 @@ void showListingLimitSheet(
             ),
             const SizedBox(height: NphSpacing.sm),
             Text(
-              e.isFairUse
+              // `isFairUse` asks which plan they are on; it says nothing about
+              // the platform. On iOS the paid-tier wording is the right answer
+              // for a free dealer too: unpublishing is the only thing they can
+              // actually do from inside the app, and naming the website here
+              // would be a call to action at the exact moment of purchase
+              // intent — the moment App Review is most likely to be looking.
+              e.isFairUse || !Env.showUpgradeLinks
                   ? 'Your existing products remain active. Unpublish a listing to '
                       'free a slot.'
                   : 'Your existing products remain active. To publish more listings, '
@@ -633,7 +649,12 @@ void showListingLimitSheet(
                   ?.copyWith(color: NphColors.mutedForeground),
             ),
             const SizedBox(height: NphSpacing.xxl),
-            if (!e.isFairUse)
+            // The most direct 3.1.1 exposure in the app, and it was reachable:
+            // a button that opens an external browser on the checkout page,
+            // offered at the moment a dealer is trying to publish. The prior
+            // condition gated it on plan only, so every free dealer on iOS saw
+            // it. Guarded on the platform as well now.
+            if (!e.isFairUse && Env.showUpgradeLinks)
               FilledButton(
                 onPressed: () async {
                   Navigator.of(ctx).pop();

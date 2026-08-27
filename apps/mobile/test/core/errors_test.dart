@@ -37,6 +37,90 @@ void main() {
       );
     });
 
+    test('never shows a raw gRPC status name', () {
+      // Found by hand on the mechanic sign-up form: a cold Functions emulator
+      // outran the callable's timeout, and the Android SDK reports that as
+      // code `deadline-exceeded` with the literal string 'DEADLINE_EXCEEDED'
+      // as the message. The message-first rule preferred it, so the last step
+      // of registration answered a machine token.
+      final shown = friendlyError(
+        FirebaseFunctionsException(code: 'deadline-exceeded', message: 'DEADLINE_EXCEEDED'),
+      );
+
+      expect(shown, isNot(contains('DEADLINE_EXCEEDED')));
+      expect(shown, contains('Check your connection'));
+    });
+
+    test('treats every transport code the same way, message or not', () {
+      for (final code in ['deadline-exceeded', 'unavailable', 'cancelled']) {
+        expect(
+          friendlyError(FirebaseFunctionsException(code: code, message: code.toUpperCase())),
+          contains('Check your connection'),
+          reason: '$code leaked its own name',
+        );
+      }
+    });
+
+    test('a machine token is refused even on a code not enumerated', () {
+      // Backstop for the codes the switch does not name. Everything this
+      // project writes deliberately is a sentence, so nothing real is caught.
+      final shown = friendlyError(
+        FirebaseFunctionsException(code: 'internal', message: 'INTERNAL_ERROR'),
+      );
+
+      expect(shown, isNot(contains('INTERNAL_ERROR')));
+      expect(shown, 'Something went wrong. Please try again.');
+    });
+
+    test('a deliberate sentence in caps is still shown', () {
+      // The guard matches tokens, not shouting. A real message survives.
+      expect(
+        friendlyError(
+          FirebaseFunctionsException(code: 'invalid-argument', message: 'CAC NUMBER IS REQUIRED'),
+        ),
+        'CAC NUMBER IS REQUIRED',
+      );
+    });
+  });
+
+  group('isAlreadyRegistered', () {
+    test('recognises the callable code', () {
+      expect(
+        isAlreadyRegistered(
+          FirebaseFunctionsException(
+            code: 'already-exists',
+            message: 'This account already has a store.',
+          ),
+        ),
+        isTrue,
+      );
+    });
+
+    test('recognises the contract code in details', () {
+      expect(
+        isAlreadyRegistered(
+          FirebaseFunctionsException(
+            code: 'failed-precondition',
+            message: 'x',
+            details: {'code': 'ALREADY_REGISTERED'},
+          ),
+        ),
+        isTrue,
+      );
+    });
+
+    test('is false for every other failure', () {
+      expect(
+        isAlreadyRegistered(
+          FirebaseFunctionsException(code: 'deadline-exceeded', message: 'DEADLINE_EXCEEDED'),
+        ),
+        isFalse,
+      );
+      expect(isAlreadyRegistered(Exception('boom')), isFalse);
+    });
+  });
+
+  group('friendlyError, continued', () {
     test('explains a consumed verification id as expiry, not as a bug', () {
       // What a dealer hit by tapping "Verify" twice. "invalid-verification-id"
       // is meaningless to them; "request a new code" is actionable.

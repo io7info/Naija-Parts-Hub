@@ -41,7 +41,8 @@
     "dev:subscription": "node scripts/dev-subscription.mjs",
     "seed:prod-categories": "npm run seed:prod-categories --workspace @nph/functions --",
     "bootstrap:prod-admin": "npm run bootstrap:prod-admin --workspace @nph/functions --",
-    "test:admin-data": "npm run test:admin-data --workspace @nph/firebase-tests"
+    "test:admin-data": "npm run test:admin-data --workspace @nph/firebase-tests",
+    "test:mechanic": "npm run test:mechanic --workspace @nph/firebase-tests"
   },
   "devDependencies": {
     "firebase-tools": "^13.29.1",

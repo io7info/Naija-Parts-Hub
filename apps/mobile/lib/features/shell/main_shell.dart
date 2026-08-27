@@ -1,9 +1,13 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../design/components.dart';
 import '../../design/tokens.dart';
+
+import 'app_header.dart';
+
+// Re-exported: NphAppHeader lived here before the mechanic shell needed it,
+// and callers (and tests) import it from this file.
+export 'app_header.dart';
 import '../../models/store.dart';
 import '../account/account_screen.dart';
 import '../home/home_screen.dart';
@@ -129,64 +133,6 @@ class MainShell extends ConsumerWidget {
 /// is ever written — and an earlier version showed a hardcoded orange unread
 /// dot, which told every dealer they had a message waiting when the feature did
 /// not exist. A control that cannot do anything is worse than no control.
-class NphAppHeader extends StatelessWidget {
-  const NphAppHeader({super.key, required this.store, this.onProfile});
-
-  final Store store;
-  final VoidCallback? onProfile;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 56,
-      padding: const EdgeInsets.symmetric(horizontal: NphSpacing.appPage),
-      color: NphColors.card,
-      child: Row(
-        children: [
-          const NphLogo(size: 34),
-          const Spacer(),
-          // Debug-only, so a release build never advertises which backend it is
-          // pointed at. See Env.describe.
-          if (kDebugMode) const _EnvironmentChip(),
-          NphIconButton(
-            icon: Icons.person_outline,
-            tooltip: 'Your account',
-            onPressed: onProfile,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EnvironmentChip extends StatelessWidget {
-  const _EnvironmentChip();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: NphSpacing.sm),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: const BoxDecoration(
-          color: NphColors.warning10,
-          borderRadius: NphRadius.pillBorder,
-        ),
-        child: const Text(
-          'DEBUG',
-          style: TextStyle(
-            fontFamily: NphFonts.body,
-            fontSize: 9,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.5,
-            color: NphColors.warning,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// Five-slot bottom navigation with the raised Add Listing circle.
 ///
 /// The circle overflows the bar upward, so the bar cannot clip its children —

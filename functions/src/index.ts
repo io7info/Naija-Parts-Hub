@@ -20,6 +20,7 @@ setGlobalOptions({
 });
 
 export { registerStore } from './registerStore';
+export { verifyMechanicIdentity } from './verifyMechanicIdentity';
 export { publishListing } from './publishListing';
 export { unpublishListing, deleteListing, deleteAccount } from './listingLifecycle';
 export { adminReviewStore, adminModerateListing } from './adminReviewStore';
