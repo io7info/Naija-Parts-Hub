@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/env.dart';
 import '../../design/components.dart';
 import '../../design/tokens.dart';
 import '../../models/store.dart';
@@ -28,7 +29,11 @@ class PendingScreen extends ConsumerWidget {
   Future<void> _contactSupport() async {
     // wa.me rather than a tel: link — support is a WhatsApp line, and the same
     // handoff the marketplace uses for buyer-to-dealer contact.
-    final uri = Uri.parse('https://wa.me/2348031234567?text=${Uri.encodeComponent(
+    // Env.supportWhatsapp, not a literal. This screen hardcoded the
+    // placeholder while every other screen read the constant, so setting
+    // --dart-define=SUPPORT_WHATSAPP would have fixed support everywhere
+    // except here — the one screen a business waiting on approval uses.
+    final uri = Uri.parse('https://wa.me/${Env.supportWhatsapp}?text=${Uri.encodeComponent(
       'Hello Naija Parts Hub, I need help with my store registration (${store.businessName}).',
     )}');
     if (await canLaunchUrl(uri)) {
