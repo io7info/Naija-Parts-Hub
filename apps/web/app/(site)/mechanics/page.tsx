@@ -46,36 +46,65 @@ export default async function MechanicsPage({
         </p>
       </header>
 
-      {/* Service filter. Ids go in the URL, labels on screen: a wording change
-          must not orphan every link already shared. */}
-      <nav className="mt-6 flex flex-wrap gap-2" aria-label="Filter by service">
-        <FilterChip href="/mechanics" active={!service} label="All services" />
-        {MECHANIC_SPECIALTIES.map((s) => (
-          <FilterChip
-            key={s.id}
-            href={`/mechanics?service=${s.id}${state ? `&state=${encodeURIComponent(state)}` : ''}`}
-            active={service === s.id}
-            label={s.label}
-          />
-        ))}
-      </nav>
+      {/*
+        Both groups carry a visible heading.
 
-      {states.length > 0 && (
-        <nav className="mt-3 flex flex-wrap gap-2" aria-label="Filter by state">
+        They were two bare rows of pills, told apart only by an aria-label that
+        a sighted buyer never sees. With ten services the first row wraps, so
+        "All states" arrived looking like a third line of the same list — two
+        different questions rendered as one. The parts browser has labelled its
+        filter groups all along; this now matches it.
+
+        Ids go in the URL, labels on screen: a wording change must not orphan
+        every link already shared.
+      */}
+      <section className="mt-6" aria-labelledby="filter-service">
+        <h2 id="filter-service" className="mb-2.5 text-sm font-semibold text-foreground">
+          Service
+        </h2>
+        <nav className="flex flex-wrap gap-2">
           <FilterChip
-            href={service ? `/mechanics?service=${service}` : '/mechanics'}
-            active={!state}
-            label="All states"
+            // Keeps the state. It used to link to a bare /mechanics, so
+            // widening the service silently cleared the location too — the
+            // state row stayed on screen with "All states" highlighted, which
+            // read as the filter having been dropped by the site rather than
+            // by the click.
+            href={state ? `/mechanics?state=${encodeURIComponent(state)}` : '/mechanics'}
+            active={!service}
+            label="All services"
           />
-          {states.map((s) => (
+          {MECHANIC_SPECIALTIES.map((s) => (
             <FilterChip
-              key={s}
-              href={`/mechanics?state=${encodeURIComponent(s)}${service ? `&service=${service}` : ''}`}
-              active={state === s}
-              label={s}
+              key={s.id}
+              href={`/mechanics?service=${s.id}${state ? `&state=${encodeURIComponent(state)}` : ''}`}
+              active={service === s.id}
+              label={s.label}
             />
           ))}
         </nav>
+      </section>
+
+      {states.length > 0 && (
+        <section className="mt-5" aria-labelledby="filter-state">
+          <h2 id="filter-state" className="mb-2.5 text-sm font-semibold text-foreground">
+            State
+          </h2>
+          <nav className="flex flex-wrap gap-2">
+            <FilterChip
+              href={service ? `/mechanics?service=${service}` : '/mechanics'}
+              active={!state}
+              label="All states"
+            />
+            {states.map((s) => (
+              <FilterChip
+                key={s}
+                href={`/mechanics?state=${encodeURIComponent(s)}${service ? `&service=${service}` : ''}`}
+                active={state === s}
+                label={s}
+              />
+            ))}
+          </nav>
+        </section>
       )}
 
       {mechanics.length === 0 ? (

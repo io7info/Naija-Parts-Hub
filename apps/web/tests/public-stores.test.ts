@@ -72,15 +72,30 @@ describe('only approved, visible stores are public', () => {
   // Checking a reader's own body for `where(...)` would now pass for a
   // function that queried `stores` directly with no filter at all.
   it('the shared helper carries every public predicate', () => {
-    const helper = REPO.slice(REPO.indexOf('function publicDealers'))
+    const helper = REPO.slice(REPO.indexOf('function publicStores'))
     expect(helper).toContain("where('status', '==', 'approved')")
     expect(helper).toContain("where('visible', '==', true)")
-    expect(helper).toContain("where('businessType', '==', 'parts_dealer')")
+  })
+
+  it('the shared helper does NOT filter dealers by businessType', () => {
+    // The regression this replaced: `where('businessType', '==',
+    // 'parts_dealer')` excludes documents that lack the field, and every store
+    // registered before the mechanic intake lacks it. Deployed, it returned
+    // zero dealers — every storefront 404, the directory empty, no error.
+    // The dealer rule belongs in code, where an absent field can mean
+    // "parts dealer" as the contract says it does.
+    expect(REPO).not.toContain("where('businessType', '==', 'parts_dealer')")
   })
 
   for (const fn of PUBLIC_STORE_READERS) {
     it(`${fn} reads through the guarded helper`, () => {
-      expect(body(fn)).toContain('publicDealers(')
+      expect(body(fn)).toContain('publicStores(')
+    })
+
+    it(`${fn} applies the dealer rule to what comes back`, () => {
+      // Going through publicStores() is no longer sufficient on its own — it
+      // returns mechanics too. Each dealer reader has to narrow the result.
+      expect(body(fn), `${fn} would render mechanics as dealers`).toContain('isDealerDoc')
     })
   }
 
@@ -102,14 +117,15 @@ describe('only approved, visible stores are public', () => {
       expect(window, 'a stores query without the visibility filter').toContain(
         "where('visible', '==', true)",
       )
-      // Either type, but never neither. `stores` now holds both parts dealers
-      // and auto mechanics, and a query with no business-type clause returns a
-      // mix — mechanics in the dealer directory, or dealers listed as
-      // workshops. Which type is asserted per-helper in business-type.test.ts;
-      // what matters here is that no query omits the distinction entirely.
-      expect(window, 'a stores query with no business-type filter').toMatch(
-        /where\('businessType', '==', '(parts_dealer|mechanic)'\)/,
-      )
+      // The business-type distinction is NOT asserted per query here.
+      //
+      // It cannot be: mechanics resolve it in Firestore, dealers resolve it in
+      // code via isDealerDoc, because legacy dealer documents have no
+      // businessType field for a query to match. Both are asserted explicitly
+      // in business-type.test.ts, and the "exactly two queries" guard there
+      // means a third query cannot appear without failing that count. So the
+      // guarantee still holds; it is just spelled out in one place rather than
+      // inferred from text near each query.
     }
   })
 

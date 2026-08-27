@@ -363,8 +363,24 @@ function DetailDrawer({
             <IconRow icon={FileText} value={`Submitted ${business.submitted}`} />
           </Section>
 
+        </div>
+
+        {/*
+          The action buttons and everything they produce live together in this
+          footer.
+
+          The reason box and the error used to sit at the end of the scrollable
+          body while the buttons were pinned here. On a mechanic — whose drawer
+          carries a whole extra Identity Verification section — that put both
+          below the fold: an administrator pressed Approve on an unverified
+          mechanic, the callable refused as designed, and the screen did
+          nothing visible. Pressing Reject was worse; the reason box it was
+          waiting on was equally out of sight, so the button simply looked
+          broken. Feedback has to appear where the control is.
+        */}
+        <div className="sticky bottom-0 space-y-2 border-t border-border bg-card p-4">
           {reasonFor && (
-            <div className="space-y-2">
+            <div className="space-y-2 pb-1">
               <label className="block text-sm font-medium text-foreground">
                 Reason for {reasonFor} — shown to the dealer
               </label>
@@ -385,9 +401,7 @@ function DetailDrawer({
               <span>{error}</span>
             </p>
           )}
-        </div>
 
-        <div className="sticky bottom-0 space-y-2 border-t border-border bg-card p-4">
           {(isPending || isRejected) && (
             <div className="flex gap-2">
               <ActionButton

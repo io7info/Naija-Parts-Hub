@@ -729,14 +729,35 @@ class NphBanner extends StatelessWidget {
 /// carries a border, which is what separates it from the page behind it when
 /// it appears directly above a button.
 class NphNotice extends StatelessWidget {
-  const NphNotice({super.key, required this.message, this.tone = NphTone.error});
+  const NphNotice({
+    super.key,
+    required this.message,
+    this.tone = NphTone.error,
+    this.title,
+    this.icon,
+  });
 
   final String message;
   final NphTone tone;
 
+  /// An optional headline above [message].
+  ///
+  /// Added so the identity screen could stop carrying its own private notice
+  /// widget. An outcome there needs naming — "Verification temporarily
+  /// unavailable" — before it is explained, and a single paragraph made every
+  /// result read the same at a glance.
+  final String? title;
+
+  /// Overrides the tone's default glyph, for outcomes the tone alone does not
+  /// distinguish: a timer for a rate limit, a badge for an identity check.
+  final IconData? icon;
+
   @override
   Widget build(BuildContext context) {
     final c = _toneColors(tone);
+    final effectiveIcon =
+        icon ?? (tone == NphTone.error ? Icons.error_outline : Icons.info_outline);
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(NphSpacing.md),
@@ -748,21 +769,37 @@ class NphNotice extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            tone == NphTone.error ? Icons.error_outline : Icons.info_outline,
-            size: 18,
-            color: c.fg,
-          ),
+          Icon(effectiveIcon, size: 18, color: c.fg),
           const SizedBox(width: NphSpacing.sm),
           Expanded(
-            child: Text(
-              message,
-              style: TextStyle(
-                fontFamily: NphFonts.body,
-                fontSize: 13,
-                height: 1.45,
-                color: c.fg,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (title != null) ...[
+                  Text(
+                    title!,
+                    style: TextStyle(
+                      fontFamily: NphFonts.heading,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: c.fg,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                ],
+                Text(
+                  message,
+                  style: TextStyle(
+                    fontFamily: NphFonts.body,
+                    fontSize: 13,
+                    height: 1.45,
+                    // The body sits on a tinted panel and is prose, not a
+                    // label — foreground rather than the tone colour, which at
+                    // paragraph length reads as shouting.
+                    color: title == null ? c.fg : NphColors.foreground,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -1180,6 +1217,163 @@ class NphInitialsAvatar extends StatelessWidget {
           fontWeight: FontWeight.w700,
           color: NphColors.orange,
         ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Business header
+// ---------------------------------------------------------------------------
+
+/// The profile block at the top of a business's own screens.
+///
+/// One layout, two products. A parts dealer and an auto mechanic run different
+/// businesses, but the identity block is the same question in both cases —
+/// who is this, where are they, and what standing do they have — so it is the
+/// same component rather than two that drift apart.
+///
+/// Content is passed in rather than derived from a Store: the design layer
+/// stays free of model imports, and neither caller can accidentally surface
+/// the other's vocabulary. A dealer passes owner name over business name over
+/// phone; a mechanic passes workshop name over location, with a service count
+/// alongside the verification badge.
+///
+/// [badges] wrap, so a long business name and two badges degrade by reflowing
+/// rather than by overflowing.
+class NphBusinessHeader extends StatelessWidget {
+  const NphBusinessHeader({
+    super.key,
+    required this.avatarName,
+    required this.title,
+    required this.subtitle,
+    this.meta,
+    this.subtitleIcon,
+    this.badges = const [],
+  });
+
+  /// Initials are taken from this, which is not always [title] — a dealer
+  /// card is headed by the owner, a workshop card by the business.
+  final String avatarName;
+  final String title;
+  final String subtitle;
+
+  /// A third line, smaller again. Phone number for a dealer; usually absent
+  /// for a mechanic, whose location is already the subtitle.
+  final String? meta;
+
+  /// Rendered before [subtitle] when present — a location pin reads faster
+  /// than the word "Location".
+  final IconData? subtitleIcon;
+
+  final List<Widget> badges;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+
+    return NphCard(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          NphInitialsAvatar(name: avatarName),
+          const SizedBox(width: NphSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: text.titleMedium,
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    if (subtitleIcon != null) ...[
+                      Icon(subtitleIcon, size: 13, color: NphColors.mutedForeground),
+                      const SizedBox(width: 3),
+                    ],
+                    Expanded(
+                      child: Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: NphFonts.body,
+                          fontSize: 13,
+                          color: NphColors.mutedForeground,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (meta != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    meta!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: NphFonts.body,
+                      fontSize: 12,
+                      color: NphColors.mutedForeground,
+                    ),
+                  ),
+                ],
+                if (badges.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Wrap(spacing: NphSpacing.xs, runSpacing: NphSpacing.xs, children: badges),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A neutral pill for a count or a fact — same geometry as the status badges,
+/// muted tone, so it reads as information rather than as standing.
+class NphMetaPill extends StatelessWidget {
+  const NphMetaPill({super.key, required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: NphSpacing.sm, vertical: 4),
+      decoration: const BoxDecoration(
+        color: NphColors.muted,
+        borderRadius: NphRadius.pillBorder,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: NphColors.mutedForeground),
+          const SizedBox(width: 4),
+          // Flexible, not a bare Text. `mainAxisSize.min` asks for the natural
+          // width, and a Wrap will happily hand back less than that when the
+          // line is nearly full — at which point an inflexible child overflows
+          // instead of shortening. Same reasoning as NphFieldLabel.
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontFamily: NphFonts.body,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: NphColors.mutedForeground,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

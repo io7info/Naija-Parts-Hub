@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:naija_parts_hub/design/theme.dart';
+import 'package:naija_parts_hub/features/account/account_screen.dart';
 import 'package:naija_parts_hub/features/mechanic/mechanic_photos_screen.dart';
+import 'package:naija_parts_hub/features/pending/pending_screen.dart';
 import 'package:naija_parts_hub/features/mechanic/mechanic_profile_screen.dart';
 import 'package:naija_parts_hub/features/registration/mechanic_identity_screen.dart';
 import 'package:naija_parts_hub/features/registration/mechanic_registration_screen.dart'
@@ -251,14 +253,23 @@ void main() {
   });
 
   group('profile — identity card', () {
-    testWidgets('verified shows the last four digits and no call to action',
+    testWidgets('verified states the outcome and asks for nothing',
         (tester) async {
       await pumpProfile(tester, mechanicStore(identity: IdentityStatus.verified));
 
       expect(find.text('Identity verified'), findsOneWidget);
-      expect(find.textContaining('BVN ending 4821'), findsOneWidget);
-      expect(find.textContaining('NIN ending 9930'), findsOneWidget);
       expect(find.widgetWithText(FilledButton, 'Verify identity'), findsNothing);
+    });
+
+    testWidgets('verified does NOT print the last four digits', (tester) async {
+      // A workshop screen is opened every day, in a workshop, with customers
+      // nearby. The last four answered a question asked once, at entry, and
+      // then sat on screen forever. The evidence belongs in admin review.
+      await pumpProfile(tester, mechanicStore(identity: IdentityStatus.verified));
+
+      expect(find.textContaining('4821'), findsNothing);
+      expect(find.textContaining('9930'), findsNothing);
+      expect(find.textContaining('ending'), findsNothing);
     });
 
     testWidgets('only the last four digits — never a full number', (tester) async {
@@ -379,8 +390,11 @@ void main() {
     testWidgets('an empty gallery argues for filling it', (tester) async {
       await pumpPhotos(tester, mechanicStore(photos: const []));
 
-      expect(find.textContaining('No photos yet'), findsOneWidget);
-      expect(find.widgetWithText(OutlinedButton, 'Camera'), findsOneWidget);
+      expect(find.textContaining('No work photos yet'), findsOneWidget);
+      // Camera is the primary action — a mechanic photographs the job in front
+      // of them far more often than they dig through a gallery. Gallery stays
+      // secondary. Asserted by type so a silent demotion is caught.
+      expect(find.widgetWithText(FilledButton, 'Camera'), findsOneWidget);
       expect(find.widgetWithText(OutlinedButton, 'Gallery'), findsOneWidget);
     });
 
@@ -392,8 +406,11 @@ void main() {
         ),
       );
 
-      expect(find.widgetWithText(OutlinedButton, 'Camera'), findsNothing);
-      expect(find.widgetWithText(OutlinedButton, 'Gallery'), findsNothing);
+      // By text, not by button type: asserting the absence of an
+      // OutlinedButton labelled Camera would pass the moment Camera became a
+      // FilledButton, whether or not it was actually withdrawn.
+      expect(find.text('Camera'), findsNothing);
+      expect(find.text('Gallery'), findsNothing);
       expect(
         find.textContaining('maximum of 10 photos. Remove one to add another'),
         findsOneWidget,
@@ -409,7 +426,12 @@ void main() {
         ]),
       );
 
+      // Deleting now asks first. A workshop photo is of a job that has been
+      // delivered — one mis-tap on a 15px glyph should not lose it.
       await tester.tap(find.byIcon(Icons.close).first);
+      await tester.pumpAndSettle();
+      expect(find.text('Remove this photo?'), findsOneWidget);
+      await tester.tap(find.widgetWithText(TextButton, 'Remove'));
       await tester.pumpAndSettle();
 
       final patch = verify(
@@ -430,6 +452,8 @@ void main() {
       );
 
       await tester.tap(find.byIcon(Icons.close).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, 'Remove'));
       await tester.pumpAndSettle();
 
       final patch = verify(
@@ -453,10 +477,352 @@ void main() {
 
       await tester.tap(find.byIcon(Icons.close).first);
       await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, 'Remove'));
+      await tester.pumpAndSettle();
 
       expect(find.text('2 of 10 photos. Buyers see these on your profile.'),
           findsOneWidget,
           reason: 'the count must not claim a deletion that did not happen');
+    });
+  });
+
+  group('pending screen — the way back to verification', () {
+    Future<void> pumpPending(WidgetTester tester, Store s) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: mechanicOverrides(storeService: store),
+          child: MaterialApp(theme: buildNphTheme(), home: PendingScreen(store: s)),
+        ),
+      );
+      await tester.pump();
+    }
+
+    testWidgets('an unverified pending mechanic is offered verification',
+        (tester) async {
+      // Without this the flow is a trap: identity is reached by
+      // pushReplacement straight after registration and nowhere else, because
+      // the other entry point lives inside MechanicShell, which the gate only
+      // reaches once approved — and approval requires the verification being
+      // sought. Closing the app on that screen left a mechanic pending
+      // forever, unable to verify and impossible to approve.
+      await pumpPending(
+        tester,
+        mechanicStore(
+          status: StoreStatus.pending,
+          identity: IdentityStatus.unverified,
+          bvnLast4: null,
+          ninLast4: null,
+        ),
+      );
+
+      expect(find.widgetWithText(FilledButton, 'Verify my identity'), findsOneWidget);
+    });
+
+    testWidgets('and the button actually opens the identity screen',
+        (tester) async {
+      await pumpPending(
+        tester,
+        mechanicStore(
+          status: StoreStatus.pending,
+          identity: IdentityStatus.unverified,
+          bvnLast4: null,
+          ninLast4: null,
+        ),
+      );
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Verify my identity'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(MechanicIdentityScreen), findsOneWidget);
+    });
+
+    testWidgets('it says the wait is on them, not on us', (tester) async {
+      await pumpPending(
+        tester,
+        mechanicStore(
+          status: StoreStatus.pending,
+          identity: IdentityStatus.unverified,
+          bvnLast4: null,
+          ninLast4: null,
+        ),
+      );
+
+      expect(find.textContaining('cannot be approved until'), findsOneWidget);
+      // The reassuring "keep this app closed" line would be a lie here — there
+      // is something outstanding and it is theirs.
+      expect(find.textContaining('keep this app closed'), findsNothing);
+    });
+
+    testWidgets('a verified pending mechanic is not asked again', (tester) async {
+      await pumpPending(
+        tester,
+        mechanicStore(status: StoreStatus.pending, identity: IdentityStatus.verified),
+      );
+
+      expect(find.widgetWithText(FilledButton, 'Verify my identity'), findsNothing);
+      expect(find.textContaining('keep this app closed'), findsOneWidget);
+    });
+
+    testWidgets('a pending DEALER is never asked for identity', (tester) async {
+      // The client was explicit that BVN and NIN are not part of the dealer
+      // flow. A dealer has no identity block at all.
+      await pumpPending(tester, dealerStore(status: StoreStatus.pending));
+
+      expect(find.widgetWithText(FilledButton, 'Verify my identity'), findsNothing);
+      expect(find.textContaining('BVN'), findsNothing);
+      expect(find.textContaining('keep this app closed'), findsOneWidget);
+    });
+
+    for (final status in [StoreStatus.rejected, StoreStatus.suspended]) {
+      testWidgets('a $status mechanic is not offered verification', (tester) async {
+        // Verifying would not change either outcome, and offering it would
+        // imply it might.
+        await pumpPending(
+          tester,
+          mechanicStore(
+            status: status,
+            identity: IdentityStatus.unverified,
+            bvnLast4: null,
+            ninLast4: null,
+          ),
+        );
+
+        expect(find.widgetWithText(FilledButton, 'Verify my identity'), findsNothing);
+      });
+    }
+  });
+
+  group('account pane — shared with the dealer shell', () {
+    Future<void> pumpAccount(WidgetTester tester, Store s) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: mechanicOverrides(storeService: store),
+          child: MaterialApp(
+            theme: buildNphTheme(),
+            home: Scaffold(body: AccountScreen(store: s)),
+          ),
+        ),
+      );
+      await tester.pump();
+    }
+
+    testWidgets('a mechanic is not offered listings or a subscription',
+        (tester) async {
+      // "My Listings" called goToShellTab(ShellTab.listings) — a MainShell
+      // index. MechanicShell keeps its own tab state and ignores that
+      // provider, so the row reported "0 active" and did nothing when tapped.
+      // "Plan & Usage" opened a subscription screen for a business that has no
+      // subscription and is never asked to pay.
+      await pumpAccount(tester, mechanicStore());
+
+      expect(find.text('My Listings'), findsNothing);
+      expect(find.text('Plan & Usage'), findsNothing);
+    });
+
+    testWidgets('a mechanic is called a mechanic', (tester) async {
+      await pumpAccount(tester, mechanicStore());
+
+      // "Identity Verified", not "Verified mechanic". The badge attests to who
+      // they are — a BVN and NIN matched against government records. It says
+      // nothing about whether they can rebuild a gearbox, and a label that
+      // blurred the two would have Naija Parts Hub vouching for competence it
+      // has never assessed.
+      expect(find.text('Identity Verified'), findsOneWidget);
+      expect(find.text('Verified dealer'), findsNothing);
+      expect(find.text('Workshop Profile'), findsOneWidget);
+      expect(find.text('Store Profile'), findsNothing);
+    });
+
+    testWidgets('the badge does not claim NPH vouches for their work',
+        (tester) async {
+      await pumpAccount(tester, mechanicStore());
+
+      for (final overclaim in ['Certified', 'Approved mechanic', 'Trusted', 'Expert']) {
+        expect(find.textContaining(overclaim), findsNothing,
+            reason: '"$overclaim" claims more than an identity check establishes');
+      }
+    });
+
+    testWidgets('a mechanic keeps what genuinely applies', (tester) async {
+      await pumpAccount(tester, mechanicStore());
+
+      // Offline sync and the account actions are not dealer-specific.
+      for (final kept in ['Sync Status', 'Contact Support', 'Log Out', 'Delete Account']) {
+        expect(find.text(kept), findsOneWidget, reason: '$kept went missing');
+      }
+    });
+
+    testWidgets('a dealer keeps every row, unchanged', (tester) async {
+      // The regression that matters: this pane is shared, and dealers are in
+      // production today.
+      await pumpAccount(tester, dealerStore());
+
+      for (final row in [
+        'Store Profile',
+        'My Listings',
+        'Plan & Usage',
+        'Sync Status',
+        'Log Out',
+        'Delete Account',
+      ]) {
+        expect(find.text(row), findsOneWidget, reason: '$row went missing for a dealer');
+      }
+      expect(find.text('Verified dealer'), findsOneWidget);
+      expect(find.text('Verified mechanic'), findsNothing);
+      expect(find.text('Workshop Profile'), findsNothing);
+    });
+  });
+
+  group('no dealer language reaches a mechanic', () {
+    /// Every string on a pane, so an assertion cannot miss one by looking in
+    /// the wrong widget.
+    List<String> textsOn(WidgetTester tester) => tester
+        .widgetList<Text>(find.byType(Text))
+        .map((t) => t.data ?? '')
+        .where((d) => d.isNotEmpty)
+        .toList();
+
+    const banned = [
+      'My Listings',
+      'Plan & Usage',
+      'MY STORE',
+      'My store',
+      'Verified dealer',
+      'Store Profile',
+      'Active Listings',
+      'Free Plan',
+      'Add Listing',
+      'Upgrade',
+    ];
+
+    testWidgets('not on the workshop tab', (tester) async {
+      await pumpShell(tester, mechanicStore());
+      final texts = textsOn(tester);
+      for (final phrase in banned) {
+        expect(texts.any((t) => t.contains(phrase)), isFalse,
+            reason: '"$phrase" is dealer language and appears on My Workshop');
+      }
+    });
+
+    testWidgets('not on the photos tab', (tester) async {
+      await pumpShell(tester, mechanicStore());
+      await tester.tap(find.text('Photos'));
+      await tester.pumpAndSettle();
+
+      final texts = textsOn(tester);
+      for (final phrase in banned) {
+        expect(texts.any((t) => t.contains(phrase)), isFalse,
+            reason: '"$phrase" is dealer language and appears on Photos');
+      }
+    });
+
+    testWidgets('not on the account tab', (tester) async {
+      await pumpShell(tester, mechanicStore());
+      await tester.tap(find.text('Account'));
+      await tester.pumpAndSettle();
+
+      final texts = textsOn(tester);
+      for (final phrase in banned) {
+        expect(texts.any((t) => t.contains(phrase)), isFalse,
+            reason: '"$phrase" is dealer language and appears on Account');
+      }
+    });
+
+    testWidgets('no BVN or NIN fragment anywhere in the mechanic shell',
+        (tester) async {
+      await pumpShell(tester, mechanicStore());
+      for (final tab in ['My Workshop', 'Photos', 'Account']) {
+        await tester.tap(find.text(tab));
+        await tester.pumpAndSettle();
+
+        for (final t in textsOn(tester)) {
+          expect(t.contains('4821'), isFalse, reason: 'BVN fragment on $tab: "$t"');
+          expect(t.contains('9930'), isFalse, reason: 'NIN fragment on $tab: "$t"');
+        }
+      }
+    });
+  });
+
+  group('photos — confirm before deleting', () {
+    testWidgets('keeping the photo writes nothing', (tester) async {
+      await pumpPhotos(
+        tester,
+        mechanicStore(photos: const ['https://cdn.example/a.jpg']),
+      );
+
+      await tester.tap(find.byIcon(Icons.close).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, 'Keep'));
+      await tester.pumpAndSettle();
+
+      verifyNever(() => store.updateProfile(any(), any()));
+      expect(find.text('1 of 10 photos. Buyers see these on your profile.'),
+          findsOneWidget);
+    });
+
+    testWidgets('the prompt says what removal actually does', (tester) async {
+      await pumpPhotos(
+        tester,
+        mechanicStore(photos: const ['https://cdn.example/a.jpg']),
+      );
+
+      await tester.tap(find.byIcon(Icons.close).first);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('no longer appear on your public profile'),
+        findsOneWidget,
+      );
+    });
+  });
+
+  group('the workshop header renders real values', () {
+    testWidgets('shows the location, not a template', (tester) async {
+      await pumpProfile(tester, mechanicStore());
+
+      expect(find.text('Oshodi, Lagos'), findsOneWidget);
+    });
+
+    testWidgets('shows the service count, not a template', (tester) async {
+      await pumpProfile(tester, mechanicStore(specialties: const ['engine', 'brakes']));
+
+      expect(find.text('2 services'), findsOneWidget);
+    });
+
+    testWidgets('one service is singular', (tester) async {
+      await pumpProfile(tester, mechanicStore(specialties: const ['engine']));
+
+      expect(find.text('1 service'), findsOneWidget);
+    });
+
+    testWidgets('the count follows the chips as they are tapped', (tester) async {
+      await pumpProfile(tester, mechanicStore(specialties: const ['engine']));
+      expect(find.text('1 service'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(FilterChip, 'AC repair'));
+      await tester.pump();
+
+      expect(find.text('2 services'), findsOneWidget);
+    });
+
+    testWidgets('no un-interpolated template survives on any tab', (tester) async {
+      // The bug this exists for: a build script escaped the dollar signs, so
+      // the header rendered the literal source text "\${store.city}" to a
+      // mechanic. Every assertion passed — nothing checked what the header
+      // actually said, only that a title was present.
+      await pumpShell(tester, mechanicStore());
+
+      for (final tab in ['My Workshop', 'Photos', 'Account']) {
+        await tester.tap(find.text(tab));
+        await tester.pumpAndSettle();
+
+        for (final t in tester.widgetList<Text>(find.byType(Text))) {
+          final data = t.data ?? '';
+          expect(data.contains(r'${'), isFalse,
+              reason: 'un-rendered template on $tab: "$data"');
+        }
+      }
     });
   });
 }

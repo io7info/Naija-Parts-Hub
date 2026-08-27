@@ -41,30 +41,44 @@ class AccountScreen extends ConsumerWidget {
         _identity(context),
         const SizedBox(height: NphSpacing.xxl),
 
+        // This pane is shared by both shells, so the inventory and
+        // subscription rows have to be withheld from mechanics rather than
+        // merely relabelled.
+        //
+        // "My Listings" was worse than irrelevant: it called
+        // goToShellTab(ShellTab.listings), which is a MainShell index.
+        // MechanicShell keeps its own tab state and ignores that provider
+        // entirely, so the row reported "0 active" and did nothing at all when
+        // tapped. "Plan & Usage" opened a subscription screen for a business
+        // that has no subscription and is never asked to pay.
         NphSettingsGroup(
-          title: 'My store',
+          title: store.isMechanic ? 'My workshop' : 'My store',
           children: [
             NphSettingsRow(
-              icon: Icons.storefront_outlined,
-              label: 'Store Profile',
+              icon: store.isMechanic ? Icons.build_outlined : Icons.storefront_outlined,
+              // Same screen either way — it holds the business details a
+              // mechanic still needs to edit: name, address, phone, WhatsApp.
+              label: store.isMechanic ? 'Workshop Profile' : 'Store Profile',
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(builder: (_) => StoreProfileScreen(store: store)),
               ),
             ),
-            NphSettingsRow(
-              icon: Icons.inventory_2_outlined,
-              label: 'My Listings',
-              value: '${store.activeListingCount} active',
-              onTap: () => goToShellTab(ref, ShellTab.listings),
-            ),
-            NphSettingsRow(
-              icon: Icons.workspace_premium_outlined,
-              label: 'Plan & Usage',
-              value: store.subscription.isPaid() ? 'Paid' : 'Free',
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => PlanStatusScreen(store: store)),
+            if (!store.isMechanic) ...[
+              NphSettingsRow(
+                icon: Icons.inventory_2_outlined,
+                label: 'My Listings',
+                value: '${store.activeListingCount} active',
+                onTap: () => goToShellTab(ref, ShellTab.listings),
               ),
-            ),
+              NphSettingsRow(
+                icon: Icons.workspace_premium_outlined,
+                label: 'Plan & Usage',
+                value: store.subscription.isPaid() ? 'Paid' : 'Free',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => PlanStatusScreen(store: store)),
+                ),
+              ),
+            ],
             NphSettingsRow(
               icon: Icons.sync,
               label: 'Sync Status',
@@ -134,56 +148,29 @@ class AccountScreen extends ConsumerWidget {
     );
   }
 
+  /// The profile block, on the shared NphBusinessHeader.
+  ///
+  /// One layout for both products. The content stays dealer-shaped for a
+  /// dealer — owner over business over phone — and mechanic-shaped for a
+  /// mechanic, whose workshop name is the thing they recognise.
   Widget _identity(BuildContext context) {
-    return NphCard(
-      child: Row(
-        children: [
-          NphInitialsAvatar(name: store.ownerName.isEmpty ? store.businessName : store.ownerName),
-          const SizedBox(width: NphSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  store.ownerName.isEmpty ? 'Dealer' : store.ownerName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  store.businessName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: NphFonts.body,
-                    fontSize: 13,
-                    color: NphColors.mutedForeground,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  formatNigerianPhone(store.phone),
-                  style: const TextStyle(
-                    fontFamily: NphFonts.body,
-                    fontSize: 12,
-                    color: NphColors.mutedForeground,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                if (store.status == StoreStatus.approved)
-                  const NphStatusBadge(
-                    label: 'Verified dealer',
-                    tone: NphTone.success,
-                    icon: Icons.verified_outlined,
-                  )
-                else
-                  NphStatusBadge.forStoreStatus(store.status.name),
-              ],
-            ),
-          ),
-        ],
-      ),
+    final mechanic = store.isMechanic;
+
+    return NphBusinessHeader(
+      avatarName: store.ownerName.isEmpty ? store.businessName : store.ownerName,
+      title: store.ownerName.isEmpty ? (mechanic ? 'Mechanic' : 'Dealer') : store.ownerName,
+      subtitle: store.businessName,
+      meta: formatNigerianPhone(store.phone),
+      badges: [
+        if (store.status == StoreStatus.approved)
+          NphStatusBadge(
+            label: mechanic ? 'Identity Verified' : 'Verified dealer',
+            tone: NphTone.success,
+            icon: Icons.verified_outlined,
+          )
+        else
+          NphStatusBadge.forStoreStatus(store.status.name),
+      ],
     );
   }
 
@@ -237,7 +224,6 @@ class AccountScreen extends ConsumerWidget {
     goToShellTab(ref, ShellTab.home);
     await ref.read(authServiceProvider).signOut();
   }
-
 }
 
 class _Footer extends StatelessWidget {

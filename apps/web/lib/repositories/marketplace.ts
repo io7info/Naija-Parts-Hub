@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { MECHANIC_SPECIALTIES } from '@nph/contracts'
+import { MECHANIC_SPECIALTIES, businessTypeOf } from '@nph/contracts'
 
 import { koboToNaira, type Condition, type Mechanic, type Product, type Store } from '../marketplace'
 import { getAdminDb } from '../firebase-admin'
@@ -223,23 +223,43 @@ export async function getPublicListing(listingId: string): Promise<Product | nul
  * tests/marketplace.test.ts asserts every `collection('stores')` query in this
  * file applies it.
  *
- * Legacy stores carry no `businessType` at all, and Firestore cannot match a
- * missing field — see functions/scripts/backfill-business-type.mjs, which must
- * have run before this filter is deployed.
+ * WHY THE TYPE IS NOT IN THE QUERY
+ *
+ * `.where('businessType', '==', 'parts_dealer')` looks like the obvious way to
+ * write this and is a trap. Firestore does not match documents that lack the
+ * field, and EVERY store registered before the mechanic intake lacks it — so
+ * that clause returned nothing at all for the entire existing dealer base.
+ * Deployed, it would have 404'd every real dealer's storefront and emptied the
+ * directory, silently, with no error anywhere.
+ *
+ * The backfill (functions/scripts/backfill-business-type.mjs) was meant to run
+ * first and would have masked it. But a migration that has not been run is a
+ * normal state of the world, and the consequence here is the whole marketplace
+ * disappearing. So the rule lives in code, where `businessTypeOf` applies the
+ * contract's reading — absent means parts dealer — and the result is the same
+ * whether the backfill has run or not.
+ *
+ * Mechanics need no such care: registerStore has always written their
+ * businessType, so none can exist without it.
  */
-function publicDealers(db: FirebaseFirestore.Firestore) {
-  return db
-    .collection('stores')
-    .where('status', '==', 'approved')
-    .where('visible', '==', true)
-    .where('businessType', '==', 'parts_dealer')
+function publicStores(db: FirebaseFirestore.Firestore) {
+  return db.collection('stores').where('status', '==', 'approved').where('visible', '==', true)
+}
+
+/** Applies the contract's rule to a raw store document. */
+function isDealerDoc(data: FirebaseFirestore.DocumentData): boolean {
+  return businessTypeOf(data as Parameters<typeof businessTypeOf>[0]) === 'parts_dealer'
 }
 
 /** Approved, visible stores for the directory. */
 export async function listPublicStores(limit = 60): Promise<Store[]> {
-  const snapshot = await publicDealers(getAdminDb()).limit(limit).get()
+  // Fetched before the type is applied, so the limit is a read bound rather
+  // than a dealer count. Store totals are in the tens; if that stops being
+  // true this wants a paginated read, not a bigger number.
+  const snapshot = await publicStores(getAdminDb()).limit(limit).get()
 
   return snapshot.docs
+    .filter((doc) => isDealerDoc(doc.data()))
     .map((doc) => toStore(doc.data()))
     .filter((store) => store.slug)
     .sort((a, b) => b.activeListings - a.activeListings)
@@ -256,13 +276,17 @@ export async function listPublicStores(limit = 60): Promise<Store[]> {
 export async function getPublicStore(
   slug: string,
 ): Promise<{ store: Store; products: Product[] } | null> {
-  const snapshot = await publicDealers(getAdminDb()).where('slug', '==', slug).limit(1).get()
+  const snapshot = await publicStores(getAdminDb()).where('slug', '==', slug).limit(1).get()
 
   if (snapshot.empty) return null
 
   // By id, not slug: `publiclyVisible + storeId + createdAt` is indexed and
   // `storeSlug` is not, and the ordered query needs an index to run at all.
   const doc = snapshot.docs[0]!
+  // A mechanic reaching the dealer storefront would render as a shop with no
+  // inventory. Slugs are unique across both types, so this is the type guard
+  // the query no longer carries.
+  if (!isDealerDoc(doc.data())) return null
   const { products } = await listPublicListings({ storeId: doc.id, limit: 120 })
   const categories = [...new Set(products.map((l) => l.category).filter(Boolean))]
 
@@ -282,9 +306,19 @@ export async function getPublicStore(
  * store's state is the same state the listings denormalize onto themselves.
  */
 export async function listMarketplaceStates(): Promise<string[]> {
-  const snapshot = await publicDealers(getAdminDb()).select('state').get()
+  // businessType is selected alongside state so the dealer rule can be applied
+  // to the projection — `select('state')` alone would hide the field the
+  // filter needs and quietly include mechanics' states.
+  const snapshot = await publicStores(getAdminDb()).select('state', 'businessType').get()
 
-  return [...new Set(snapshot.docs.map((d) => d.get('state') as string).filter(Boolean))].sort()
+  return [
+    ...new Set(
+      snapshot.docs
+        .filter((d) => isDealerDoc(d.data()))
+        .map((d) => d.get('state') as string)
+        .filter(Boolean),
+    ),
+  ].sort()
 }
 
 /** Slugs for generateStaticParams. Empty is valid — a new project has no stores. */

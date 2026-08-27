@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../design/tokens.dart';
 import '../../models/store.dart';
 import '../account/account_screen.dart';
+import 'app_header.dart';
 import '../mechanic/mechanic_profile_screen.dart';
 import '../mechanic/mechanic_photos_screen.dart';
 
@@ -45,7 +46,19 @@ class _MechanicShellState extends ConsumerState<MechanicShell> {
       backgroundColor: NphColors.background,
       body: SafeArea(
         bottom: false,
-        child: IndexedStack(index: _tab, children: panes),
+        // The same Column(header, Expanded(IndexedStack)) MainShell uses.
+        // Without the header this app lost the logo, the account shortcut and
+        // the debug environment chip — three tabs that read as a different
+        // product rather than a different workspace in the same one.
+        child: Column(
+          children: [
+            NphAppHeader(
+              store: store,
+              onProfile: () => setState(() => _tab = 2),
+            ),
+            Expanded(child: IndexedStack(index: _tab, children: panes)),
+          ],
+        ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,

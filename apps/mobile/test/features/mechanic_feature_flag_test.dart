@@ -4,7 +4,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:naija_parts_hub/core/env.dart';
+import 'package:naija_parts_hub/design/components.dart';
 import 'package:naija_parts_hub/design/theme.dart';
 import 'package:naija_parts_hub/features/registration/business_type_screen.dart';
 import 'package:naija_parts_hub/features/registration/mechanic_registration_screen.dart';
@@ -297,6 +299,87 @@ void main() {
       // flag exists. Keeping that indirection means the gate cannot drift out
       // of step with the flag.
       expect(registrationEntryPoint(), isA<BusinessTypeScreen>());
+    });
+  });
+
+  group('the two business types are visually distinguishable', () {
+    testWidgets('each card names what the account will be', (tester) async {
+      await tester.pumpWidget(_app(enabled: true));
+      await tester.pump();
+
+      // The choice cannot be changed afterwards, so the difference has to be
+      // stated rather than inferred from an icon: a dealer manages inventory,
+      // a mechanic is found by their services.
+      expect(find.text('Inventory'), findsOneWidget);
+      expect(find.text('Services'), findsOneWidget);
+    });
+
+    testWidgets('both cards sit on the shared card surface', (tester) async {
+      await tester.pumpWidget(_app(enabled: true));
+      await tester.pump();
+
+      // NphCard, not a bespoke container — same radius, border and surface as
+      // every other card in the app.
+      expect(find.byType(NphCard), findsNWidgets(2));
+    });
+
+    testWidgets('the dealer card promises inventory, not services', (tester) async {
+      await tester.pumpWidget(_app(enabled: true));
+      await tester.pump();
+
+      expect(find.textContaining('List parts with prices and photos'), findsOneWidget);
+      expect(find.textContaining('Advertise the services you offer'), findsOneWidget);
+    });
+
+    testWidgets('the mechanic card warns about BVN and NIN up front', (tester) async {
+      await tester.pumpWidget(_app(enabled: true));
+      await tester.pump();
+
+      // Nobody should discover a BVN requirement four steps into a form.
+      expect(find.textContaining('verify your identity with BVN and NIN'), findsOneWidget);
+    });
+  });
+
+  group('the selector is not a dead end', () {
+    testWidgets('offers a way to sign out', (tester) async {
+      // This screen is the gate's root when a signed-in user has no store —
+      // no back button, because there is nothing behind it. Someone who
+      // signed in on the wrong number could otherwise neither register as
+      // themselves nor leave, short of clearing the app's data.
+      await tester.pumpWidget(_app(enabled: true));
+      await tester.pump();
+
+      expect(find.widgetWithText(TextButton, 'Sign Out'), findsOneWidget);
+    });
+
+    testWidgets('signing out actually calls the service', (tester) async {
+      final auth = authDouble();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: mechanicOverrides(mechanicSignupEnabled: true, authService: auth),
+          child: MaterialApp(theme: buildNphTheme(), home: const BusinessTypeScreen()),
+        ),
+      );
+      await tester.pump();
+
+      // Below the fold on a 400x900 viewport — two cards, the guidance text
+      // and a divider sit above it.
+      final signOut = find.widgetWithText(TextButton, 'Sign Out');
+      await tester.ensureVisible(signOut);
+      await tester.pumpAndSettle();
+      await tester.tap(signOut);
+      await tester.pump();
+
+      verify(() => auth.signOut()).called(1);
+    });
+
+    testWidgets('shows which number is signed in, so a wrong one is visible',
+        (tester) async {
+      await tester.pumpWidget(_app(enabled: true));
+      await tester.pump();
+
+      // The number is the thing that makes the mistake noticeable at all.
+      expect(find.textContaining('Signed in as'), findsOneWidget);
     });
   });
 }

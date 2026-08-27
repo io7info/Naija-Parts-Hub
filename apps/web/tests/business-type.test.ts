@@ -17,35 +17,62 @@ const read = (p: string) => readFileSync(join(REPO_ROOT, p), 'utf8')
  */
 describe('public store queries are filtered by business type', () => {
   const source = read('apps/web/lib/repositories/marketplace.ts')
-  const DEALERS = 'function publicDealers'
+  const SHARED = 'function publicStores'
   const MECHANICS = 'function publicMechanics'
 
   it('stores is queried only from the two guarded helpers', () => {
-    // Exactly two: publicDealers and publicMechanics. A third means someone
-    // has hand-rolled a query that can skip the business-type filter, and the
-    // symptom would be mechanics listed as dealers rather than an error.
+    // Exactly two: publicStores (approved + visible, both types) and
+    // publicMechanics. A third means someone has hand-rolled a query that can
+    // skip the business-type distinction, and the symptom would be mechanics
+    // listed as dealers rather than an error.
     const queries = source.match(/\.collection\('stores'\)/g) ?? []
     expect(queries.length).toBe(2)
 
-    for (const helper of [DEALERS, MECHANICS]) {
+    for (const helper of [SHARED, MECHANICS]) {
       const body = source.slice(source.indexOf(helper), source.indexOf(helper) + 400)
       expect(body, `${helper} must own its query`).toContain(".collection('stores')")
     }
   })
 
-  it('each helper pins its own business type', () => {
-    // Two helpers rather than one taking a parameter, deliberately: a caller
-    // passing the wrong argument would render mechanics through a dealer
-    // surface, which is exactly what the client ruled out.
-    const dealers = source.slice(source.indexOf(DEALERS), source.indexOf(DEALERS) + 400)
-    expect(dealers).toContain("'status', '==', 'approved'")
-    expect(dealers).toContain("'visible', '==', true")
-    expect(dealers).toContain("'businessType', '==', 'parts_dealer'")
+  it('mechanics are pinned in the query; dealers are pinned in code', () => {
+    // The asymmetry is deliberate and load-bearing.
+    //
+    // Mechanics always carry businessType — registerStore has written it since
+    // the intake existed — so Firestore can filter them.
+    //
+    // Dealers cannot be filtered that way. Every store registered before
+    // mechanics has no such field, and Firestore does not match a missing
+    // field, so the equality clause returned NOTHING for the entire existing
+    // dealer base: every storefront 404, the directory empty, silently. The
+    // dealer rule therefore lives in isDealerDoc, which reads the contract's
+    // businessTypeOf — absent means parts dealer.
+    const shared = source.slice(source.indexOf(SHARED), source.indexOf(SHARED) + 400)
+    expect(shared).toContain("'status', '==', 'approved'")
+    expect(shared).toContain("'visible', '==', true")
+    expect(shared, 'the missing-field trap is back').not.toContain("'businessType', '=='")
 
     const mechanics = source.slice(source.indexOf(MECHANICS), source.indexOf(MECHANICS) + 400)
     expect(mechanics).toContain("'status', '==', 'approved'")
     expect(mechanics).toContain("'visible', '==', true")
     expect(mechanics).toContain("'businessType', '==', 'mechanic'")
+
+    expect(source).toContain('function isDealerDoc')
+    const rule = source.slice(source.indexOf('function isDealerDoc'), source.indexOf('function isDealerDoc') + 300)
+    expect(rule).toContain('businessTypeOf')
+    expect(rule).toContain('parts_dealer')
+  })
+
+  it('no dealer query anywhere filters on the field legacy stores lack', () => {
+    // The single line that broke the marketplace. Named so it cannot come back
+    // by way of a helpful refactor.
+    //
+    // Comments are stripped first: the fix is documented in prose that quotes
+    // the very clause it warns against, and a naive scan would flag the
+    // warning as the offence.
+    const code = source
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^[ 	]*\/\/.*$/gm, '')
+    expect(code).not.toContain("'businessType', '==', 'parts_dealer'")
   })
 
   it('the mechanic projection never reads the identity block', () => {

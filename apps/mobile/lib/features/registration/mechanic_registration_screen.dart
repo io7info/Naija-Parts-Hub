@@ -161,6 +161,18 @@ class _MechanicRegistrationScreenState extends ConsumerState<MechanicRegistratio
     }
   }
 
+  /// Straight into verification.
+  ///
+  /// The record now exists but cannot be approved until the identity check
+  /// passes, so leaving the mechanic to find the step on their own would
+  /// strand the application. pushReplacement, so there is no route back into a
+  /// form that has already been submitted.
+  Future<void> _openIdentityStep() {
+    return Navigator.of(context).pushReplacement<void, void>(
+      MaterialPageRoute(builder: (_) => const MechanicIdentityScreen(afterRegistration: true)),
+    );
+  }
+
   Future<void> _submit() async {
     if (!_accepted) {
       setState(() => _error = 'Please accept the Terms and Privacy Policy.');
@@ -194,13 +206,21 @@ class _MechanicRegistrationScreenState extends ConsumerState<MechanicRegistratio
           );
 
       if (!mounted) return;
-      // Straight into verification. The record now exists but cannot be
-      // approved until this passes, so leaving the mechanic to find the step
-      // on their own would strand the application.
-      await Navigator.of(context).pushReplacement<void, void>(
-        MaterialPageRoute(builder: (_) => const MechanicIdentityScreen(afterRegistration: true)),
-      );
+      await _openIdentityStep();
     } catch (e) {
+      // The store already exists and belongs to this account. That is what a
+      // registration which reached the server but whose reply was lost looks
+      // like on the second press — a real possibility on a Nigerian mobile
+      // network, and one this screen cannot otherwise recover from: unlike
+      // the dealer wizard, which is returned inside app_gate and re-routes on
+      // its own when the store document arrives, this screen is pushed above
+      // the gate. Left alone it would answer "This account already has a
+      // store" forever, with four completed steps behind it.
+      if (isAlreadyRegistered(e)) {
+        if (!mounted) return;
+        await _openIdentityStep();
+        return;
+      }
       if (mounted) setState(() => _error = friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -218,11 +238,23 @@ class _MechanicRegistrationScreenState extends ConsumerState<MechanicRegistratio
       body: SafeArea(
         child: Column(
           children: [
-            _StepBar(steps: _steps, current: _step),
+            // NphStepper, not a private bar. It carries the step LABELS the
+            // hand-rolled version dropped, so a mechanic can see that Photos
+            // is coming rather than only that a bar has grown.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                NphSpacing.xl,
+                NphSpacing.md,
+                NphSpacing.xl,
+                NphSpacing.xs,
+              ),
+              child: NphStepper(steps: _steps, current: _step),
+            ),
             Expanded(
               child: SingleChildScrollView(
                 controller: _scroll,
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                padding: const EdgeInsets.fromLTRB(
+                    NphSpacing.xl, NphSpacing.lg, NphSpacing.xl, NphSpacing.xxl),
                 child: Form(
                   key: _keys[_step],
                   child: switch (_step) {
@@ -236,11 +268,12 @@ class _MechanicRegistrationScreenState extends ConsumerState<MechanicRegistratio
             ),
             if (_error != null)
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                child: _ErrorBanner(message: _error!),
+                padding: const EdgeInsets.fromLTRB(NphSpacing.xl, 0, NphSpacing.xl, NphSpacing.sm),
+                child: NphNotice(message: _error!),
               ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+              padding: const EdgeInsets.fromLTRB(
+                  NphSpacing.xl, NphSpacing.sm, NphSpacing.xl, NphSpacing.xl),
               child: SizedBox(
                 width: double.infinity,
                 child: FilledButton(
@@ -287,7 +320,7 @@ class _MechanicRegistrationScreenState extends ConsumerState<MechanicRegistratio
             ),
           ),
           const Padding(
-            padding: EdgeInsets.only(bottom: 16),
+            padding: EdgeInsets.only(bottom: NphSpacing.lg),
             child: Text(
               'Use the name on your NIN — we check it against your BVN and NIN later.',
               style: TextStyle(fontSize: 12, color: NphColors.mutedForeground),
@@ -299,8 +332,7 @@ class _MechanicRegistrationScreenState extends ConsumerState<MechanicRegistratio
               controller: _description,
               maxLines: 4,
               maxLength: 2000,
-              validator: (v) =>
-                  (v ?? '').trim().isEmpty ? 'Tell buyers what you do' : null,
+              validator: (v) => (v ?? '').trim().isEmpty ? 'Tell buyers what you do' : null,
             ),
           ),
           NphField(
@@ -319,16 +351,16 @@ class _MechanicRegistrationScreenState extends ConsumerState<MechanicRegistratio
   Widget _servicesStep() => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Which services do you offer?',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            style: Theme.of(context).textTheme.titleMedium,
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: NphSpacing.xs),
           const Text(
             'Buyers filter by these, so choose everything you genuinely do.',
             style: TextStyle(color: NphColors.mutedForeground),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: NphSpacing.lg),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -371,8 +403,7 @@ class _MechanicRegistrationScreenState extends ConsumerState<MechanicRegistratio
             child: DropdownButtonFormField<String>(
               initialValue: _state.isEmpty ? null : _state,
               items: [
-                for (final s in nigerianStates)
-                  DropdownMenuItem(value: s, child: Text(s)),
+                for (final s in nigerianStates) DropdownMenuItem(value: s, child: Text(s)),
               ],
               onChanged: (v) => setState(() => _state = v ?? ''),
               validator: (v) => (v ?? '').isEmpty ? 'Choose your state' : null,
@@ -405,17 +436,17 @@ class _MechanicRegistrationScreenState extends ConsumerState<MechanicRegistratio
   Widget _photosStep() => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Photos of your work',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            style: Theme.of(context).textTheme.titleMedium,
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: NphSpacing.xs),
           const Text(
             'Up to $maxWorkshopPhotos photos of your workshop or jobs you have completed. '
             'This is what convinces a buyer to call you.',
             style: TextStyle(color: NphColors.mutedForeground),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: NphSpacing.lg),
           if (_photos.isNotEmpty)
             GridView.count(
               crossAxisCount: 3,
@@ -429,7 +460,7 @@ class _MechanicRegistrationScreenState extends ConsumerState<MechanicRegistratio
                     fit: StackFit.expand,
                     children: [
                       ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(NphRadius.md),
                         child: CachedNetworkImage(
                           imageUrl: url,
                           fit: BoxFit.cover,
@@ -461,7 +492,7 @@ class _MechanicRegistrationScreenState extends ConsumerState<MechanicRegistratio
                   ),
               ],
             ),
-          const SizedBox(height: 12),
+          const SizedBox(height: NphSpacing.md),
           if (_photos.length < maxWorkshopPhotos)
             Row(
               children: [
@@ -472,7 +503,7 @@ class _MechanicRegistrationScreenState extends ConsumerState<MechanicRegistratio
                     label: const Text('Camera'),
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: NphSpacing.sm),
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: _uploading ? null : () => _addPhoto(fromCamera: false),
@@ -489,10 +520,10 @@ class _MechanicRegistrationScreenState extends ConsumerState<MechanicRegistratio
             ),
           if (_uploading)
             const Padding(
-              padding: EdgeInsets.only(top: 12),
+              padding: EdgeInsets.only(top: NphSpacing.md),
               child: LinearProgressIndicator(),
             ),
-          const SizedBox(height: 20),
+          const SizedBox(height: NphSpacing.xl),
           CheckboxListTile(
             value: _accepted,
             onChanged: (v) => setState(() => _accepted = v ?? false),
@@ -503,7 +534,7 @@ class _MechanicRegistrationScreenState extends ConsumerState<MechanicRegistratio
               style: TextStyle(fontSize: 13),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: NphSpacing.sm),
           const Text(
             'Next you will verify your identity with your BVN and NIN. '
             'We never store those numbers.',
@@ -515,68 +546,41 @@ class _MechanicRegistrationScreenState extends ConsumerState<MechanicRegistratio
 
 /// The 36 states plus the FCT.
 const nigerianStates = <String>[
-  'Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa', 'Benue',
-  'Borno', 'Cross River', 'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu',
-  'FCT (Abuja)', 'Gombe', 'Imo', 'Jigawa', 'Kaduna', 'Kano', 'Katsina',
-  'Kebbi', 'Kogi', 'Kwara', 'Lagos', 'Nasarawa', 'Niger', 'Ogun', 'Ondo',
-  'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara',
+  'Abia',
+  'Adamawa',
+  'Akwa Ibom',
+  'Anambra',
+  'Bauchi',
+  'Bayelsa',
+  'Benue',
+  'Borno',
+  'Cross River',
+  'Delta',
+  'Ebonyi',
+  'Edo',
+  'Ekiti',
+  'Enugu',
+  'FCT (Abuja)',
+  'Gombe',
+  'Imo',
+  'Jigawa',
+  'Kaduna',
+  'Kano',
+  'Katsina',
+  'Kebbi',
+  'Kogi',
+  'Kwara',
+  'Lagos',
+  'Nasarawa',
+  'Niger',
+  'Ogun',
+  'Ondo',
+  'Osun',
+  'Oyo',
+  'Plateau',
+  'Rivers',
+  'Sokoto',
+  'Taraba',
+  'Yobe',
+  'Zamfara',
 ];
-
-class _StepBar extends StatelessWidget {
-  const _StepBar({required this.steps, required this.current});
-
-  final List<String> steps;
-  final int current;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-      child: Row(
-        children: [
-          for (var i = 0; i < steps.length; i++) ...[
-            Expanded(
-              child: Container(
-                height: 4,
-                decoration: BoxDecoration(
-                  color: i <= current ? NphColors.orange : NphColors.muted,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            if (i < steps.length - 1) const SizedBox(width: 6),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: NphColors.error.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: NphColors.error.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.error_outline, size: 18, color: NphColors.error),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(message, style: const TextStyle(color: NphColors.error, fontSize: 13)),
-          ),
-        ],
-      ),
-    );
-  }
-}

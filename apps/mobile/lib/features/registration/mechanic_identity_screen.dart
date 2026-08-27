@@ -92,58 +92,56 @@ class _MechanicIdentityScreenState extends ConsumerState<MechanicIdentityScreen>
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          padding: const EdgeInsets.fromLTRB(
+              NphSpacing.xl, NphSpacing.lg, NphSpacing.xl, NphSpacing.xxl),
           child: Form(
             key: _form,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (widget.afterRegistration)
-                  const _Notice(
+                  const NphNotice(
+                    tone: NphTone.success,
                     icon: Icons.check_circle_outline,
-                    tone: NphColors.success,
                     title: 'Your workshop details are saved',
-                    body: 'One step left. We verify every mechanic before their profile goes '
-                        'live, so buyers know who they are calling.',
+                    message: 'One step left. We verify every mechanic before their profile '
+                        'goes live, so buyers know who they are calling.',
                   ),
-                const SizedBox(height: 16),
-
-                const Text(
+                const SizedBox(height: NphSpacing.lg),
+                Text(
                   'Why we ask for this',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: NphSpacing.xs),
                 const Text(
                   'Customers hand their vehicles to you. Verifying your identity is what lets '
                   'us show them a Verified badge on your profile.',
                   style: TextStyle(color: NphColors.mutedForeground, height: 1.4),
                 ),
-                const SizedBox(height: 16),
-
+                const SizedBox(height: NphSpacing.lg),
                 Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
+                  padding: const EdgeInsets.all(NphSpacing.lg),
+                  decoration: const BoxDecoration(
                     color: NphColors.warm,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: NphRadius.fieldBorder,
                   ),
                   child: const Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Icon(Icons.lock_outline, size: 18, color: NphColors.foreground),
-                      SizedBox(width: 10),
+                      SizedBox(width: NphSpacing.sm),
                       Expanded(
                         child: Text(
-                          'We do not store your BVN or NIN. They are checked once, and we keep '
-                          'only the last four digits so you can recognise which numbers you '
-                          'used. Nobody at Naija Parts Hub can see the full numbers.',
+                          'We do not store your BVN or NIN. They are checked once, and only '
+                          'the last four digits are kept, for our verification team. Nobody '
+                          'at Naija Parts Hub can see the full numbers.',
                           style: TextStyle(fontSize: 12.5, height: 1.45),
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 20),
-
+                const SizedBox(height: NphSpacing.xl),
                 NphField(
                   label: 'Full name as it appears on your NIN',
                   child: TextFormField(
@@ -179,10 +177,8 @@ class _MechanicIdentityScreenState extends ConsumerState<MechanicIdentityScreen>
                     validator: _elevenDigits,
                   ),
                 ),
-
                 if (result != null) _resultBanner(result),
-
-                const SizedBox(height: 8),
+                const SizedBox(height: NphSpacing.sm),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
@@ -196,10 +192,9 @@ class _MechanicIdentityScreenState extends ConsumerState<MechanicIdentityScreen>
                         : const Text('Verify my identity'),
                   ),
                 ),
-
                 if (done)
                   Padding(
-                    padding: const EdgeInsets.only(top: 12),
+                    padding: const EdgeInsets.only(top: NphSpacing.md),
                     child: SizedBox(
                       width: double.infinity,
                       child: OutlinedButton(
@@ -210,10 +205,9 @@ class _MechanicIdentityScreenState extends ConsumerState<MechanicIdentityScreen>
                       ),
                     ),
                   ),
-
                 if (result?.attemptsRemaining != null && !done)
                   Padding(
-                    padding: const EdgeInsets.only(top: 10),
+                    padding: const EdgeInsets.only(top: NphSpacing.sm),
                     child: Text(
                       '${result!.attemptsRemaining} attempt(s) remaining before a temporary lock.',
                       style: const TextStyle(fontSize: 12, color: NphColors.mutedForeground),
@@ -234,15 +228,15 @@ class _MechanicIdentityScreenState extends ConsumerState<MechanicIdentityScreen>
   }
 
   Widget _resultBanner(IdentityResult r) {
-    final (IconData icon, Color tone, String title) = switch (r.outcome) {
+    final (IconData icon, NphTone tone, String title) = switch (r.outcome) {
       IdentityOutcome.verified => (
           Icons.verified_outlined,
-          NphColors.success,
+          NphTone.success,
           'Identity verified',
         ),
       IdentityOutcome.manualReview => (
           Icons.hourglass_empty,
-          NphColors.warning,
+          NphTone.warning,
           'Sent for review',
         ),
       // The distinction that matters most: the platform is unfinished, and
@@ -250,33 +244,33 @@ class _MechanicIdentityScreenState extends ConsumerState<MechanicIdentityScreen>
       // configuration.
       IdentityOutcome.unavailable => (
           Icons.info_outline,
-          NphColors.mutedForeground,
+          NphTone.neutral,
           'Verification temporarily unavailable',
         ),
       IdentityOutcome.rateLimited => (
           Icons.timer_outlined,
-          NphColors.warning,
+          NphTone.warning,
           'Too many attempts',
         ),
       IdentityOutcome.alreadyUsed => (
           Icons.person_off_outlined,
-          NphColors.error,
+          NphTone.error,
           'Already registered',
         ),
       IdentityOutcome.failed => (
           Icons.error_outline,
-          NphColors.error,
+          NphTone.error,
           'We could not verify those details',
         ),
     };
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: _Notice(
+      padding: const EdgeInsets.only(bottom: NphSpacing.md),
+      child: NphNotice(
         icon: icon,
         tone: tone,
         title: title,
-        body: r.outcome == IdentityOutcome.verified
+        message: r.outcome == IdentityOutcome.verified
             ? 'Your application is with our team now. You will be notified when it is approved.'
             // Two things this must not claim.
             //
@@ -297,53 +291,6 @@ class _MechanicIdentityScreenState extends ConsumerState<MechanicIdentityScreen>
                     'verification right now. Naija Parts Hub does not store your full BVN '
                     'or NIN. Please come back and try this step again later.'
                 : (r.message ?? 'Please try again.'),
-      ),
-    );
-  }
-}
-
-class _Notice extends StatelessWidget {
-  const _Notice({
-    required this.icon,
-    required this.tone,
-    required this.title,
-    required this.body,
-  });
-
-  final IconData icon;
-  final Color tone;
-  final String title;
-  final String body;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: tone.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: tone.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 18, color: tone),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: TextStyle(fontWeight: FontWeight.bold, color: tone)),
-                const SizedBox(height: 3),
-                Text(
-                  body,
-                  style: const TextStyle(fontSize: 12.5, height: 1.4, color: NphColors.foreground),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

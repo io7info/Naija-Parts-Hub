@@ -1,3 +1,4 @@
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -499,6 +500,57 @@ void main() {
       // pushReplacement, so there is no back route into a form that has
       // already been submitted.
       expect(find.byType(MechanicRegistrationScreen), findsNothing);
+    });
+
+    testWidgets('a lost reply recovers on the next press instead of stranding',
+        (tester) async {
+      // What a registration that reached the server but whose reply was lost
+      // looks like when the mechanic presses Submit again. The store exists,
+      // so the callable refuses — and this screen is pushed above app_gate, so
+      // unlike the dealer wizard it cannot be re-routed out from underneath.
+      // Reporting a failure here would leave four completed steps behind a
+      // permanent "you already have a store".
+      stubRegister(
+        store,
+        throws: FirebaseFunctionsException(
+          code: 'already-exists',
+          message: 'This account already has a store.',
+        ),
+      );
+
+      await pumpWizard(tester);
+      await reachPhotosStep(tester);
+      await acceptTerms(tester);
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Submit for review'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MechanicIdentityScreen), findsOneWidget);
+      expect(find.text('This account already has a store.'), findsNothing);
+    });
+
+    testWidgets('a transport failure says something a mechanic can act on',
+        (tester) async {
+      stubRegister(
+        store,
+        throws: FirebaseFunctionsException(
+          code: 'deadline-exceeded',
+          message: 'DEADLINE_EXCEEDED',
+        ),
+      );
+
+      await pumpWizard(tester);
+      await reachPhotosStep(tester);
+      await acceptTerms(tester);
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Submit for review'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('DEADLINE_EXCEEDED'), findsNothing);
+      expect(find.textContaining('Check your connection'), findsOneWidget);
+      // Still on the form, with the button live, so the retry above is
+      // reachable.
+      expect(find.widgetWithText(FilledButton, 'Submit for review'), findsOneWidget);
     });
 
     testWidgets('a failed registration keeps the form and explains itself',

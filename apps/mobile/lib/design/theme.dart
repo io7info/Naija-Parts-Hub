@@ -259,17 +259,37 @@ CardThemeData _cardTheme() => const CardThemeData(
 
 /// Filter chips are pills — `rounded-full border px-3 py-1.5 text-xs`. Pills
 /// are correct *here*; they are not correct for buttons. See _buttonStyle.
-ChipThemeData _chipTheme() => const ChipThemeData(
+///
+/// The label colour is stated per state rather than left to inherit. It used to
+/// be omitted, which resolved to no colour at all: selected chips took white
+/// from the selected-chip default and looked right, while unselected ones
+/// painted their label on a white card and vanished. The Services step of
+/// mechanic sign-up showed ten blank pills — the labels were there, laid out
+/// and tappable, just invisible.
+ChipThemeData _chipTheme() => ChipThemeData(
       backgroundColor: NphColors.card,
       selectedColor: NphColors.orange,
+      // The state-dependence belongs on `color`, not on the TextStyle.
+      //
+      // RawChip resolves the label colour with
+      // `WidgetStateProperty.resolveAs<Color?>(labelStyle.color, states)`, so a
+      // WidgetStateColor here is honoured while a WidgetStateTextStyle wrapping
+      // the whole style is not — it answers null for `.color` and the chip
+      // falls back to its own default, which is what left the label unpainted.
       labelStyle: TextStyle(
         fontFamily: NphFonts.body,
         fontSize: 12,
         fontWeight: FontWeight.w600,
+        color: WidgetStateColor.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? Colors.white
+              : NphColors.foreground,
+        ),
       ),
-      side: BorderSide(color: NphColors.border),
-      shape: RoundedRectangleBorder(borderRadius: NphRadius.pillBorder),
-      padding: EdgeInsets.symmetric(horizontal: NphSpacing.md, vertical: 6),
+      checkmarkColor: Colors.white,
+      side: const BorderSide(color: NphColors.border),
+      shape: const RoundedRectangleBorder(borderRadius: NphRadius.pillBorder),
+      padding: const EdgeInsets.symmetric(horizontal: NphSpacing.md, vertical: 6),
     );
 
 SnackBarThemeData _snackBarTheme() => const SnackBarThemeData(
